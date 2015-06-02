@@ -10,9 +10,9 @@
  * Structure for holding model parameters.
  *
  */
-/* WHEN MODYIFING THIS STRUCT, REMEMBER TO UPDATE NOT ONLY THE C CODE,
- * SETTER FUNCTION, ETC, BUT THE **PYTHON INTERFACE** AS WELL -- THIS
- * IS IMPORTANT AS THINGS CAN GO SILENTLY WRONG IF THIS IS NOT DONE!
+/* WHEN MODYIFING THIS STRUCT, REMEMBER TO UPDATE **PYTHON INTERFACE**
+ * AS WELL -- THIS IS IMPORTANT AS THINGS CAN GO SILENTLY WRONG IF
+ * THIS IS NOT DONE!
  */
 typedef struct {
   double LGD;    /*< Loss given default. */
@@ -32,6 +32,8 @@ typedef struct {
 		     threshold. If k0 is the baseline, kimp is period
 		     1 impairment, then period 2 impairment kimp2 =
 		     (1-chi)*k0 + chi*k1. */
+
+  double theta;  /*< Mean-reversal parameter: X_k = theta X_{k - 1} + Z_k. */
 
 } bnet_pars_t;
 

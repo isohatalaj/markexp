@@ -16,11 +16,12 @@ import pybnet
 bn = pybnet.Bnet(LGD = 0.2,
                  PD = 0.05,
                  rho = 0.3,
-                 gamma = 0.5,
-                 psi = 5.0,
+                 gamma = 1.0,
+                 psi = 7.0,
                  q0 = 0.1,
                  q1 = 0.9,
-                 chi = 0.0)
+                 chi = 0.0,
+                 theta = 1.0)
 
 # Calibrate phi, and phi2 relative to phi
 phi_calib = bn.calibrate_phi()

@@ -1,5 +1,6 @@
 
 #include <stdio.h>
+#include <math.h>
 
 #include "bnet.h"
 
@@ -47,7 +48,7 @@ bnet_work_alloc()
    */
   self->tol_rel  = 1e-6;
   self->tol_abs  = 1e-6;
-  self->max_iter = 32;
+  self->max_iter = 64;
   self->intwork_size = 512;
 
   /* gsl object initializations */
@@ -198,6 +199,13 @@ k_star(double eps, double X, double rho)
   return sqrt(1 - rho*rho) * eps + rho * X;
 }
 
+static double
+X_star(double k, double eps, double rho)
+{
+  return (k - sqrt(1 - rho*rho) * eps) / rho;
+}
+
+
 /* Since eps's and k's are interchangable, we should for simplicity
  * stick to using only one or the other. This will avoid unnecessary
  * complexity, and possible errors. Convention: FAVOUR eps
@@ -297,6 +305,11 @@ typedef struct {
   double phi2;
   double delta;
 
+  double power;
+
+  double X1;
+  double theta;
+
   /* these two are only needed by alphatwo_expect */
   double kimp2; /*< Period 2 impairment k threshold. */
   double rho;
@@ -305,17 +318,16 @@ typedef struct {
 /* Alpha2 times normal pdf with parameters deferred to the
  * alpha_pars_t struct, passed in as a voidptr. */
 static double
-comp_alphatwo_expect_gfun(double X2, void *params)
+comp_alphatwo_expect_gfun(double Z2, void *params)
 {
   alpha_pars_t *p = params;
-  /* TODO: Now here is a problem with our model.  We do not presently
-   * have a way of setting/estimating/evaluating the period 2
-   * impairment threshold, and instead we assume*/
+  double X2 = p->theta*p->X1 + Z2;
   double epsimp2 = bnet_eps_star(p->kimp2, X2, p->rho);
   double alphatwo = comp_alphatwo(p->epsimp, epsimp2, p->epsfc, 
 				  p->phi, p->phi2);
 
-  return gpdf(X2) * alphatwo;
+  if (p->power != 1.0) return gpdf(Z2) * pow(alphatwo, p->power);
+  return gpdf(Z2) * alphatwo;
 }
 
 /* Compute period 1 to 2 profit, can be negative. */
@@ -353,11 +365,14 @@ comp_Delta_min(double epsimp, double epsfc, double phi)
  * good number of X2 outcomes correspond to the same (maximum) profit,
  * this is a nonzero value. */
 double
-comp_Delta_max_mass(double rho, double kimp2, double epsimp, double epsfc, 
-		    double phi, double phi2)
+comp_Delta_max_mass(double rho, 
+		    double X1,
+		    double kimp2, double epsimp, double epsfc, 
+		    double phi, double phi2, double theta)
 {
-  double X2 = (-epsfc * sqrt(1.0 - rho*rho) + kimp2) / rho;
-  double bulk_mass = gcdf(X2);
+  double X2 = X_star(kimp2, epsfc, rho);
+  double Z2 = X2 - theta*X1;
+  double bulk_mass = gcdf(Z2);
 
   return 1.0 - bulk_mass;
 }
@@ -385,9 +400,11 @@ comp_Delta_diff_gfun(double epsimp2, alpha_pars_t *p)
 int
 comp_Delta_cdf(double delta,
 	       double rho, 
+	       double X1,
 	       double kimp2,
 	       double epsimp, double epsfc,
 	       double phi, double phi2,
+	       double theta,
 	       double *FDelta,
 	       bnet_work_t *work)
 {
@@ -467,7 +484,8 @@ comp_Delta_cdf(double delta,
     }
 
   double X2 = (-eps2_root * sqrt(1.0 - rho*rho) + kimp2) / rho;
-  *FDelta = gcdf(X2);
+  double Z2 = X2 - theta*X1;
+  *FDelta = gcdf(Z2);
   
   return GSL_SUCCESS;
 }
@@ -481,11 +499,13 @@ comp_Delta_cdf(double delta,
 typedef struct {
   double quant;
   double rho;
+  double X1;
   double kimp2;
   double epsimp;
   double epsfc;
   double phi;
   double phi2;
+  double theta;
   bnet_work_t *work;
 } delta_cdf_pars_t;
 
@@ -498,8 +518,8 @@ comp_Delta_cdf_gfun(double delta, void *params)
   int status;
   double F;
 
-  status = comp_Delta_cdf(delta, p->rho, p->kimp2, p->epsimp, p->epsfc,
-			  p->phi, p->phi2, &F, p->work);
+  status = comp_Delta_cdf(delta, p->rho, p->X1, p->kimp2, p->epsimp, p->epsfc,
+			  p->phi, p->phi2, p->theta, &F, p->work);
   if (status) return GSL_NAN;
 
   return F - p->quant;
@@ -510,16 +530,19 @@ comp_Delta_cdf_gfun(double delta, void *params)
 int
 comp_Delta_quantile(double quant,
 		    double rho, 
+		    double X1,
 		    double kimp2,
 		    double epsimp, double epsfc,
 		    double phi, double phi2,
+		    double theta,
 		    double *deltap,
 		    bnet_work_t *work)
 {
   double Delta_max  = comp_Delta_max(epsimp, epsfc, phi, phi2);
   double Delta_min  = comp_Delta_min(epsimp, epsfc, phi);
-  double Delta_qmax = 1.0 - comp_Delta_max_mass(rho, kimp2, epsimp, epsfc, 
-						phi, phi2);
+  double Delta_qmax = 1.0 - comp_Delta_max_mass(rho, X1,
+						kimp2, epsimp, epsfc, 
+						phi, phi2, theta);
 
   if (quant <= 0.0)        { *deltap = Delta_min; return GSL_SUCCESS; }
   if (quant >= Delta_qmax) { *deltap = Delta_max; return GSL_SUCCESS; }
@@ -528,24 +551,26 @@ comp_Delta_quantile(double quant,
 
   p.quant  = quant;
   p.rho    = rho;
+  p.X1     = X1;
   p.kimp2  = kimp2;
   p.epsimp = epsimp;
   p.epsfc  = epsfc;
   p.phi    = phi;
   p.phi2   = phi2;
+  p.theta  = theta;
   p.work   = work;
 
   int status;
   status = findroot_2(work, comp_Delta_cdf_gfun, &p,
-				Delta_min, Delta_max, deltap);
+		      Delta_min, Delta_max, deltap);
   if (status)
     {
       double y0, y1;
 
-      comp_Delta_cdf(Delta_min, rho, kimp2, epsimp, epsfc, 
-		     phi, phi2, &y0, work);
-      comp_Delta_cdf(Delta_max, rho, kimp2, epsimp, epsfc, 
-		     phi, phi2, &y1, work);
+      comp_Delta_cdf(Delta_min, rho, X1, kimp2, epsimp, epsfc, 
+		     phi, phi2, theta, &y0, work);
+      comp_Delta_cdf(Delta_max, rho, X1, kimp2, epsimp, epsfc, 
+		     phi, phi2, theta, &y1, work);
 
       fprintf(stderr, "# error debug: y0 = %le, y1 = %le\n", y0, y1);
       GSL_ERROR("failed finding root when determining Delta quantile", 
@@ -556,12 +581,15 @@ comp_Delta_quantile(double quant,
 }
 
 /* Compute the expectation value of alpha2, where the expectation is
- * naturally to be taken over the outturns of X2. */
+ * naturally to be taken over the outturns of Z2. */
 int
 comp_alphatwo_expectation(double rho, 
+			  double X1,
 			  double kimp2,
 			  double epsimp, double epsfc,
 			  double phi, double phi2,
+			  double theta,
+			  double power,
 			  double *a2expect,
 			  bnet_work_t *w)
 {
@@ -574,6 +602,9 @@ comp_alphatwo_expectation(double rho,
   p.phi2   = phi2;
   p.kimp2  = kimp2;
   p.rho    = rho;
+  p.X1     = X1;
+  p.theta  = theta;
+  p.power  = power;
 
   gsl_function f;
 
@@ -589,26 +620,7 @@ comp_alphatwo_expectation(double rho,
   				&a2_mean, &a2_mean_err);
   if (status) GSL_ERROR("integration failed", GSL_EFAILED);
   
-  /* TODO: The above integral can be simplified a bit, below
-   * is an old attempt WHICH IS VERY MUCH WRONG!!!!!!! */
-
-  /* double a2_mean_2; */
-  /* double Xl = (k - sqrt(1 - rho*rho) * epsfc); */
-
-  /* status = gsl_integration_qagil(&f, Xl, */
-  /* 				 w->tol_abs, w->tol_rel,  */
-  /* 				 w->intwork_size, w->intwork,  */
-  /* 				 &a2_mean_2, &a2_mean_err); */
-  /* if (status) GSL_ERROR("integration failed", GSL_EFAILED); */
-  
-  /* a2_mean_2 += comp_alphaplusplus(epsfc) * (1.0 - gcdf(Xl)); */
-
-  /* if (fabs(a2_mean_2 - a2_mean) > 1e-3 * (fabs(a2_mean_2) + fabs(a2_mean)) + 1e-4) */
-  /*   { */
-  /*     printf("# %25.15lf %25.15lf, ", a2_mean, a2_mean_2); */
-  /*     printf(" corr = %25.15lf\n", comp_alphaplusplus(epsfc) * (1.0 - gcdf(Xl))); */
-  /*     // GSL_ERROR("two ways of computing a2mean do not agree", GSL_EFAILED); */
-  /*   } */
+  /* TODO: The above integral can be simplified a bit. */
     
   *a2expect = a2_mean;
 
@@ -762,34 +774,60 @@ bnet_comp_Omega(double c0,
 
   c1 = (c0 - kappa1) / (1 - lambda1);
 
+  /* */
+  double a1;
+  a1 = comp_alphaone(epsimp, epsfc, p->phi);
+
   double a2expect;
-  status = comp_alphatwo_expectation(p->rho, kimp2, epsimp, epsfc, 
-				     p->phi, p->phi2, 
+  status = comp_alphatwo_expectation(p->rho, X, kimp2, epsimp, epsfc, 
+				     p->phi, p->phi2, p->theta,
+				     1.0,
 				     &a2expect,
 				     w);
   if (status) 
     GSL_ERROR("failed computing alpha2 expectation value", 
 	      GSL_EFAILED);
+
+  /* double a2invexpect; */
+  /* status = comp_alphatwo_expectation(p->rho, X, kimp2, epsimp, epsfc,  */
+  /* 				     p->phi, p->phi2, p->theta, */
+  /* 				     -1.0, */
+  /* 				     &a2expect, */
+  /* 				     w); */
+  /* if (status)  */
+  /*   GSL_ERROR("failed computing alpha2 inverse expectation value",  */
+  /* 	      GSL_EFAILED); */
+
+  /* double delta_median; */
+  /* status = comp_Delta_quantile(0.5, p->rho, X, kimp2, epsimp, epsfc,  */
+  /* 			       p->phi, p->phi2, p->theta, &delta_median, w); */
+  /* if (status) GSL_ERROR("failed finding delta median", GSL_EFAILED); */
+
   
   double deltaq0, deltaq1;
 
-  status = comp_Delta_quantile(p->q0, p->rho, kimp2, epsimp, epsfc, 
-			       p->phi, p->phi2, &deltaq0, w);
+  status = comp_Delta_quantile(p->q0, p->rho, X, kimp2, epsimp, epsfc, 
+			       p->phi, p->phi2, p->theta, &deltaq0, w);
   if (status) GSL_ERROR("failed finding delta quantile q0", GSL_EFAILED);
 
-  status = comp_Delta_quantile(p->q1, p->rho, kimp2, epsimp, epsfc, 
-			       p->phi, p->phi2, &deltaq1, w);
+  status = comp_Delta_quantile(p->q1, p->rho, X, kimp2, epsimp, epsfc, 
+			       p->phi, p->phi2, p->theta, &deltaq1, w);
   if (status) GSL_ERROR("failed finding delta quantile q1", GSL_EFAILED);
 
   double ipr = deltaq1 - deltaq0;
-  double Ec2 = c0 + iota1 + a2expect - 1.0; /* TODO: <- Looks OK, but
-					       check that once more */
+  double EC2overL0 = c0 + iota1 + a2expect - 1.0;
+  double EDelta = a2expect - a1;
+  /* double Ec2 = (c0 + iota1 - 1.0) * a2invexpect + 1.0; */
 
-  *Omega = (1 - p->gamma) * Ec2 - p->gamma * ipr;
+  double risk = ipr;
+  /* double gain = a2expect;  */
+  double gain = EC2overL0;
+
+  *Omega = (1 - p->gamma) * gain - p->gamma * risk;
 
   *c1_out = c1;
-  *ipr_out = ipr;
-  *Ec2_out = Ec2;
+  *ipr_out = risk;
+  *Ec2_out = gain;
 
   return GSL_SUCCESS;
 }

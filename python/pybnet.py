@@ -65,7 +65,8 @@ class Pars(ctypes.Structure):
         ("q1", ctypes.c_double),
         ("phi", ctypes.c_double),
         ("phi2", ctypes.c_double),
-        ("chi", ctypes.c_double)]
+        ("chi", ctypes.c_double),
+        ("theta", ctypes.c_double)]
 
 
 class Bnet:

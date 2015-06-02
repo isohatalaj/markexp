@@ -16,7 +16,8 @@ bn = pybnet.Bnet(LGD = 0.2,
                  psi = 0.0,
                  q0 = 0.1,
                  q1 = 0.9,
-                 chi = 1.0)
+                 chi = 0.0,
+                 theta = 1.0)
 
 # Calibrate phi, and set phi2 relative to phi
 bn.pars.phi = bn.calibrate_phi()

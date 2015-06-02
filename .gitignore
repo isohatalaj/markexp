@@ -1,3 +1,9 @@
 *~
+*.pdf
+*.o
+*.dll
+*.exe
+*.sh
+*.pyc
 build
 __pycache__

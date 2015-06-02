@@ -14,11 +14,12 @@ import pybnet
 bn = pybnet.Bnet(LGD = 0.2,
                  PD = 0.05,
                  rho = 0.3,
-                 gamma = 0.5,
+                 gamma = 0.25,
                  psi = 5.0,
                  q0 = 0.1,
                  q1 = 0.9,
-                 chi = 1.0)
+                 chi = 0.0,
+                 theta = 1.0)
 
 # Calibrate phi, and phi2 relative to phi
 phi_calib = bn.calibrate_phi()
@@ -28,7 +29,7 @@ bn.pars.phi2 = 2*bn.pars.phi
 
 # Initial capitalisation ratio c, bank capital C, loan value L, and
 # shock X.
-c = (0.06, 0.045)
+c = (0.06, 0.06)
 C = (4.5, 3.0)
 L = (C[0]/c[0], C[1]/c[1])
 X = -1.5
@@ -57,18 +58,8 @@ WB = np.vectorize(lambda ka, kb, n:
 # Let us choose foreclosure thresholds (kfcA, kfcB) relative to
 # baseline k, kzero;
 kzero = bn.comp_kzero()
-
-# kadata = np.ogrid[kzero - 2.5:kzero:20j]
-# kbdata = np.ogrid[kzero - 2.5:kzero:20j]
 kadata, kbdata = np.mgrid[kzero - 2.5:kzero:20j, kzero - 2.5:kzero:20j]
 
-# kadata = np.linspace(kzero - 2.5, kzero, 20)
-# kbdata = np.linspace(kzero - 2.5, kzero, 20)
-# kadata, kbdata = np.meshgrid(kadata, kbdata)
-
-# WAdata = WA(kadata, kbdata, 0)
-# WBdata = WB(kadata, kbdata, 0)
-# WSdata = WAdata + WBdata
 
 # WA(kadata, kbdata, 1) would give bank A C^1 vs. foreclosure k
 # WA(kadata, kbdata, 2) would give bank A E[C^2] vs. foreclosure k
