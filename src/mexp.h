@@ -19,6 +19,9 @@ typedef struct {
   double k0_1;   /* Baseline impairment k, period 1 */
   double k0_2;   /* Baseline impairment k, period 2 */
 
+  double c0_A;   /* Bank A initial capitalization ratio */
+  double c0_B;   /* Bank B initial capitalization ratio */
+
   double L0_A;   /* Bank A initial loan pfolio value */
   double L0_B;   /* Bank B initial loan pfolio value */
 
@@ -30,16 +33,27 @@ typedef struct {
   double psi;    /* Price impact parameter */
   double chi;    /* Price impact persistence, k_imp_2 = (1-chi)k_0 + chi k_imp_1 */
 
-  double gamma;  /* Risk weight in objective function */
-  double q0;     /* Risk measure lower quantile */
-  double q1;     /* Risk measure upper quantile */
+  double gamma0; /* Period 2 capital weight in objective function */
+  double gamma1; /* Profit spread weight in objective function */
+  double q0;     /* Profit spread lower quantile */
+  double q1;     /* Profit spread upper quantile */
+
+  double gamma2; /* Tail risk weight in objective function */
+  double c_bar;  /* Tail risk capitalisation ratio thold. */
 
   double X1;     /* Period one aggregate shock parameter */
+
+  double dummy;  /* Temp variable to sneak an extra parameter into
+		  * some functions. Yucky hack, I know. */
 } mexp_pars_t;
 
 typedef struct {
+  gsl_root_fsolver *solver;
+  int max_iter;
+
   gsl_integration_workspace *intwork;
   int intwork_size;
+
   double tol_rel;
   double tol_abs;
 } mexp_work_t;
@@ -74,6 +88,8 @@ int
 mexp_single_objective(double k_dag_1,
 		      double k_dag_dag_1,
 		      double k_dag_2,
+		      double c_0,
+		      double L_0,
 		      double *Omega,
 		      mexp_pars_t *p, mexp_work_t *w);
 
@@ -89,3 +105,39 @@ mexp_two_objectives(double k_dag_dag_1_A,
 		    double *k_dag_1, double *k_dag_2,
 		    double *Omega_A, double *Omega_B,
 		    mexp_pars_t *p, mexp_work_t *w);
+
+/* Find the upper bound for the impairment threshold k (obviously then
+ * also the upper bound for foreclosures). This is found by setting
+ * the foreclosure thresholds of both banks to the impairment
+ * threshold in the expression for the fire-sale impact. */
+int
+mexp_find_k_fcl_ubound(double *k_fcl_ubound,
+		       mexp_pars_t *p, mexp_work_t *w);
+
+int
+mexp_find_k_fcl_A_ubound(double *k_fcl_A_ubound,
+			 double k_fcl_B,
+			 double k_fcl_ubound,
+			 mexp_pars_t *p,
+			 mexp_work_t *w);
+
+int
+mexp_find_k_fcl_B_ubound(double *k_fcl_B_ubound,
+			 double k_fcl_A,
+			 double k_fcl_ubound,
+			 mexp_pars_t *p,
+			 mexp_work_t *w);
+
+double
+mexp_eps_star(double k, const mexp_pars_t *p);
+
+double
+mexp_N_star(double k, const mexp_pars_t *p);
+
+/* Convert tilde fractions (ratio of foreclosures to max. number of
+   impaired loans across all strategies of all banks) to values of k. q*/
+double
+mexp_k_of_p_tilde(double p_tilde, double k_bound,
+		  mexp_pars_t *p);
+
+
