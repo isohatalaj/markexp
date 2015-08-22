@@ -47,6 +47,11 @@ typedef struct {
 		  * some functions. Yucky hack, I know. */
 } mexp_pars_t;
 
+// C = C(Z)
+// P(C in [C',C'+dC])/dC = P(Z st. C(Z) in [C',C'+dC])/dC = f(Z(C)) / |dC/dZ|
+//
+// dC = dZ dC/dZ 
+
 typedef struct {
   gsl_root_fsolver *solver;
   int max_iter;
@@ -83,6 +88,40 @@ mexp_map_coefs(double eps_dag_1, double eps_dag_dag_1,
 	       double *Iota1, double *Kappa1, double *Lambda1,
 	       double *Lambda2,
 	       mexp_pars_t *p, mexp_work_t *w);
+
+int
+mexp_Lambda2(double eps_dag_1, double eps_dag_dag_1,
+	     double eps_dag_2,
+	     double *Lambda2, double *Lambda2_prime,
+	     mexp_pars_t *p, mexp_work_t *w);
+
+
+/* Compute the eps_dag_2 value corresponding to period 2 capital C2
+ * (C_or_c == 0) or capitalisation ratio c2 = C2/L2 (C_or_c == 1). */
+int
+mexp_find_eps_dag_2_given_c(double eps_dag_1, double eps_dag_dag_1,
+			    int C_or_c, double c_0, double L_0,
+			    double x_target,
+			    double *eps_dag_2_root,
+			    mexp_pars_t *p, mexp_work_t *w);
+
+/* Compute capitalisation (absolute C2 if C_or_c == 0, ratio C2/L2 if
+ * C_or_c == 1) of a bank (A if bank == 0, B if bank == 1) probability
+ * distribution functions.
+ */
+int
+mexp_cap2_pdf_cdf(double k_dag_dag_1_A,
+		  double k_dag_dag_1_B,
+		  int bank,
+		  int C_or_c,
+		  double x, double *fx, double *Fx,
+		  mexp_pars_t *p, mexp_work_t *w);
+
+int
+mexp_cr2_pdf_cdf(double eps_dag_1, double eps_dag_dag_1, double k_dag_2,
+		 int C_or_c, double c_0, double L_0,
+		 double x, double *fx, double *Fx,
+		 mexp_pars_t *p, mexp_work_t *w);
 
 int
 mexp_single_objective(double k_dag_1,

@@ -213,6 +213,156 @@ mexp_work_stdinteg(int limtype, double alpha, double omega,
   return GSL_SUCCESS;
 }
 
+static double
+exp_ff_integral(int limtype, double alpha, double omega,
+		double a, double b, double c)
+{
+  double t2 = b*b + 1.0;
+  double t = sqrt(t2);
+  
+  double Ialpha, Iomega;
+  double Z = exp(a*(0.5*a-b*c)/t2)*gpdf(c/t);
+  double Y = (a-b*c)/t;
+
+  switch (limtype)
+    {
+    case MEXP_FIN_FIN:
+      Ialpha = gcdf(t*alpha - Y);
+      Iomega = gcdf(t*omega - Y);
+      break;
+
+    case MEXP_FIN_INF:
+      Ialpha = gcdf(t*alpha - Y);
+      Iomega = 1.0;
+      break;
+
+    case MEXP_INF_FIN:
+      Ialpha = 0.0;
+      Iomega = gcdf(t*omega - Y);
+      break;
+
+    case MEXP_INF_INF:
+      Ialpha = 0.0;
+      Iomega = 1.0;
+    }
+
+  return Z*(Iomega - Ialpha);
+}
+		
+static int
+LI_integrals(double eps_dag_1, double eps_dag_dag_1,
+	     double eps_dag_2,
+	     double *LI,
+	     double *LJ,
+	     mexp_pars_t *p, mexp_work_t *w)
+{
+  int status;
+  double xi_prime = sqrt(1.0 - p->xi*p->xi);
+
+  int lt;
+  double alpha, omega;
+  double a, b, c;
+
+  lt = MEXP_FIN_FIN;
+  alpha = eps_dag_dag_1;
+  omega = eps_dag_1;
+  a = p->phi2*(p->varphi+p->xi);
+  b = -(p->varphi + p->xi)/xi_prime;
+  c = (eps_dag_2 + p->varphi*eps_dag_1)/xi_prime - p->phi2*xi_prime;
+  status = mexp_work_stdinteg(lt, alpha, omega,
+			      a, b, c, LI, w); //ok
+  if (status) GSL_ERROR("Failed computing map coefs as integration I returned bad status",
+			GSL_EFAILED);
+  if (LJ) LJ[0] = exp_ff_integral(lt, alpha, omega, a, b, c)/xi_prime;
+
+
+  lt = MEXP_FIN_FIN;
+  alpha = eps_dag_dag_1;
+  omega = eps_dag_1;
+  a = 0.0;
+  b = -(p->varphi+p->xi)/xi_prime;
+  c = (eps_dag_2 + p->varphi*eps_dag_1)/xi_prime;
+  status = mexp_work_stdinteg(lt, alpha, omega,
+			      a, b, c, LI + 1, w); //ok
+  if (status) GSL_ERROR("Failed computing map coefs as integration II returned bad status",
+			GSL_EFAILED);
+  if (LJ) LJ[1] = exp_ff_integral(lt, alpha, omega, a, b, c)/xi_prime;
+			      
+  lt = MEXP_FIN_INF;
+  alpha = eps_dag_1;
+  omega = 0.0; // infty
+  a = p->phi2*p->xi;
+  b = -p->xi/xi_prime;
+  c = eps_dag_2/xi_prime - p->phi2*xi_prime;
+  status = mexp_work_stdinteg(lt, alpha, omega,
+			      a, b, c, LI + 2, w); //ok
+  if (status) GSL_ERROR("Failed computing map coefs as integration III returned bad status",
+			GSL_EFAILED);
+  if (LJ) LJ[2] = exp_ff_integral(lt, alpha, omega, a, b, c)/xi_prime;
+		
+  lt = MEXP_FIN_INF;
+  alpha = eps_dag_1;
+  omega = 0.0; // infty
+  a = 0.0;
+  b = -p->xi/xi_prime;
+  c = eps_dag_2/xi_prime;
+  status = mexp_work_stdinteg(lt, alpha, omega,
+			      a, b, c, LI + 3, w); //ok
+  if (status) GSL_ERROR("Failed computing map coefs as integration IV returned bad status",
+			GSL_EFAILED);
+  if (LJ) LJ[3] = exp_ff_integral(lt, alpha, omega, a, b, c)/xi_prime;
+
+  return GSL_SUCCESS;
+}
+
+int
+mexp_Lambda2(double eps_dag_1, double eps_dag_dag_1,
+	     double eps_dag_2,
+	     double *Lambda2, double *Lambda2_prime,
+	     mexp_pars_t *p, mexp_work_t *w)
+{
+  double LI[4], LJ[4];
+  int status; 
+
+  status = LI_integrals(eps_dag_1, eps_dag_dag_1, eps_dag_2, 
+			LI, Lambda2_prime ? LJ : NULL,
+			p, w);
+  if (status) GSL_ERROR("Failed doing Lambda_2 integrals",
+			GSL_EFAILED);
+
+  /* TODO: Optimisation opportunities here. */
+  double A0 = exp(0.5*p->phi2*p->phi2*(1-p->xi*p->xi)-p->phi2*(eps_dag_2+p->varphi*eps_dag_1));
+  double A2 = exp(0.5*p->phi2*p->phi2*(1-p->xi*p->xi)-p->phi2*eps_dag_2);
+  double B0 = 1.0 - gcdf(eps_dag_dag_1);
+
+  *Lambda2 = B0 + A0*LI[0] - LI[1] + A2*LI[2] - LI[3];
+
+  if (Lambda2_prime)
+    {
+      *Lambda2_prime = 
+	A0*(-p->phi2*LI[0] + LJ[0]) 
+	- LJ[1] 
+	+ A2*(-p->phi2*LI[2] + LJ[2])
+	- LJ[3];
+    }
+
+  return GSL_SUCCESS;
+}
+
+int
+mexp_map_coefs_1(double eps_dag_1, double eps_dag_dag_1,
+		 double eps_dag_2,
+		 double *Iota1, double *Kappa1, double *Lambda1,
+		 mexp_pars_t *p, mexp_work_t *w)
+{
+  /* TODO: Optimisation opportunities here. */
+
+  *Iota1   = exp(p->phi1*(0.5*p->phi1-eps_dag_1))*gcdf(eps_dag_dag_1-p->phi1); //ok
+  *Kappa1  = -gcdf(eps_dag_1) + exp(p->phi1*(0.5*p->phi1-eps_dag_1))*gcdf(eps_dag_1-p->phi1); //ok
+  *Lambda1 = 1.0 - gcdf(eps_dag_1) - exp(p->phi1*(0.5*p->phi1-eps_dag_1))*(gcdf(eps_dag_dag_1 - p->phi1) - gcdf(eps_dag_1 - p->phi1)); //ok
+
+  return GSL_SUCCESS;
+}
 
 int
 mexp_map_coefs(double eps_dag_1, double eps_dag_dag_1,
@@ -221,74 +371,38 @@ mexp_map_coefs(double eps_dag_1, double eps_dag_dag_1,
 	       double *Lambda2,
 	       mexp_pars_t *p, mexp_work_t *w)
 {
-  *Iota1   = exp(p->phi1*(0.5*p->phi1-eps_dag_1))*gcdf(eps_dag_dag_1-p->phi1); //ok
-  *Kappa1  = -gcdf(eps_dag_1) + exp(p->phi1*(0.5*p->phi1-eps_dag_1))*gcdf(eps_dag_1-p->phi1); //ok
-  *Lambda1 = 1.0 - gcdf(eps_dag_1) - exp(p->phi1*(0.5*p->phi1-eps_dag_1))*(gcdf(eps_dag_dag_1 - p->phi1) - gcdf(eps_dag_1 - p->phi1)); //ok
+  int status;
 
-  double xi_prime = sqrt(1.0 - p->xi*p->xi);
-  double LI1, LI2, LI3, LI4;
-  int status; 
-
-  status = mexp_work_stdinteg(MEXP_FIN_FIN, eps_dag_dag_1, eps_dag_1,
-			      p->phi2*(p->varphi+p->xi),
-			      -(p->varphi + p->xi)/xi_prime,
-			      (eps_dag_2 + p->varphi*eps_dag_1)/xi_prime - p->phi2*xi_prime,
-			      &LI1, w); //ok
-  if (status) GSL_ERROR("Failed computing map coefs as integration I returned bad status",
+  status = mexp_map_coefs_1(eps_dag_1, eps_dag_dag_1, eps_dag_2,
+			    Iota1, Kappa1, Lambda1,
+			    p, w);
+  if (status) GSL_ERROR("Failed computing period 1 IKL coefficients",
 			GSL_EFAILED);
-
-  status = mexp_work_stdinteg(MEXP_FIN_FIN, eps_dag_dag_1, eps_dag_1,
-			      0.0,
-			      -(p->varphi+p->xi)/xi_prime,
-			      (eps_dag_2 + p->varphi*eps_dag_1)/xi_prime,
-			      &LI2, w); //ok
-  if (status) GSL_ERROR("Failed computing map coefs as integration II returned bad status",
+  
+  status = mexp_Lambda2(eps_dag_1, eps_dag_dag_1, eps_dag_2,
+			Lambda2, NULL, p, w);
+  if (status) GSL_ERROR("Failed computing Lambda2",
 			GSL_EFAILED);
-			      
-  status = mexp_work_stdinteg(MEXP_FIN_INF, eps_dag_1, 0.0,
-			      p->phi2*p->xi,
-			      -p->xi/xi_prime,
-			      eps_dag_2/xi_prime - p->phi2*xi_prime,
-			      &LI3, w); //ok
-  if (status) GSL_ERROR("Failed computing map coefs as integration III returned bad status",
-			GSL_EFAILED);
-			      
-  status = mexp_work_stdinteg(MEXP_FIN_INF, eps_dag_1, 0.0,
-			      0.0,
-			      -p->xi/xi_prime,
-			      eps_dag_2/xi_prime,
-			      &LI4, w);
-  if (status) GSL_ERROR("Failed computing map coefs as integration IV returned bad status",
-			GSL_EFAILED);
-			      
-
-  *Lambda2 = 
-    1.0 - gcdf(eps_dag_dag_1)
-    + exp(0.5*p->phi2*p->phi2*(1-p->xi*p->xi)-p->phi2*(eps_dag_2+p->varphi*eps_dag_1))*LI1
-    - LI2 
-    + exp(0.5*p->phi2*p->phi2*(1-p->xi*p->xi)-p->phi2*eps_dag_2)*LI3
-    - LI4
-    ; //ok
-
-  //ok'd 18.8. 10:54
 
   return GSL_SUCCESS;
 }
 
 typedef struct {
+  int C_or_c;
   mexp_work_t *w;
   mexp_pars_t *p;
   double c_0;
   double L_0;
   double eps_dag_1;
   double eps_dag_dag_1;
-} tailrisk_pars_t;
+  double x_target;
+} dag2finder_pars_t;
 
 static double
-tailrisk_fun(double eps_dag_2, void *pars)
+dag2finder_fun(double eps_dag_2, void *pars)
 {
   int status;
-  tailrisk_pars_t *p = pars;
+  dag2finder_pars_t *p = pars;
   double Iota_1, Kappa_1, Lambda_1, Lambda_2;
 
   status = mexp_map_coefs(p->eps_dag_1, p->eps_dag_dag_1, eps_dag_2,
@@ -297,54 +411,63 @@ tailrisk_fun(double eps_dag_2, void *pars)
   if (status) GSL_ERROR_VAL("Failed computing 0->2 period map coefficients",
 			    GSL_EFAILED, GSL_NAN);
 
-  return (p->c_0 + Iota_1 - 1.0)/Lambda_2 + 1 - p->p->c_bar;
-  // return p->c_0 + Iota_1 - 1.0 + Lambda_2 - p->p->c_bar;
+  if (p->C_or_c == 0)
+    {
+      return (p->c_0 + Iota_1 - 1.0 + Lambda_2)*p->L_0 - p->x_target;
+    }
+  else
+    {
+      return (p->c_0 + Iota_1 - 1.0)/Lambda_2 + 1 - p->x_target;
+    }
 }
 
-static int
-tailrisk(double eps_dag_1, double eps_dag_dag_1, 
-	 double k_dag_2,
-	 double c_0, double L_0,
-	 double *risk,
-	 mexp_pars_t *p, mexp_work_t *w)
+int
+mexp_find_eps_dag_2_given_c(double eps_dag_1, double eps_dag_dag_1,
+			    int C_or_c, double c_0, double L_0,
+			    double x_target,
+			    double *eps_dag_2_root,
+			    mexp_pars_t *p, mexp_work_t *w)
 {
   int status;
 
-  tailrisk_pars_t tp;
+  dag2finder_pars_t tp;
+  tp.C_or_c = C_or_c;
   tp.w = w;
   tp.p = p;
   tp.c_0 = c_0;
   tp.L_0 = L_0;
   tp.eps_dag_1 = eps_dag_1;
   tp.eps_dag_dag_1 = eps_dag_dag_1;
+  tp.x_target = x_target;
 
   /* TODO: Can we refine this bracket a bit? */
-  double eps_dag_2_min = -5.0;
-  double eps_dag_2_max = +5.0;
-  double eps_dag_2_root;
+  double eps_dag_2_min = -8.0;
+  double eps_dag_2_max = +8.0;
 
-  double y0 = tailrisk_fun(eps_dag_2_min, &tp);
-  double y1 = tailrisk_fun(eps_dag_2_max, &tp);
+  double y0 = dag2finder_fun(eps_dag_2_min, &tp);
+  double y1 = dag2finder_fun(eps_dag_2_max, &tp);
 
   if (y0*y1 > 0.0)
     {
-      *risk = y0 < 0 ? 1.0 : 0.0;
-      return GSL_SUCCESS;
+      *eps_dag_2_root = y0 > 0 ? eps_dag_2_max : eps_dag_2_min;
     }
-
-  status = findroot(w, tailrisk_fun, &tp,
-		    eps_dag_2_min, eps_dag_2_max,
-		    &eps_dag_2_root);
-  if (status) GSL_ERROR("Failed finding root when computing tailrisk",
-			GSL_EFAILED);
-
-  double Z2_root = ((k_dag_2 - sqrt(1-p->rho*p->rho)*eps_dag_2_root)/p->rho - (1-p->mu)*p->X1)/p->zeta;
-
-  *risk = gcdf(Z2_root);
+  else
+    {
+      status = findroot(w, dag2finder_fun, &tp,
+			eps_dag_2_min, eps_dag_2_max,
+			eps_dag_2_root);
+      if (status) GSL_ERROR("Failed finding root when computing tailrisk",
+			    GSL_EFAILED);
+    }
 
   return GSL_SUCCESS;
 }
 
+static double
+eps_dag_2_to_Z2(double k_dag_2, double eps_dag_2, mexp_pars_t *p)
+{
+  return ((k_dag_2 - sqrt(1-p->rho*p->rho)*eps_dag_2)/p->rho - (1-p->mu)*p->X1)/p->zeta;
+}
 
 static inline double
 eps_star(double k, double X, double rho)
@@ -396,7 +519,7 @@ mexp_single_objective(double k_dag_1,
   double eps_dag_2_q1 = eps_star(k_dag_2, X2_q1, p->rho);
     
   double Iota_1, Kappa_1, Lambda_1, Lambda_2;
-  double C2_median, Delta_q0, Delta_q1, Delta_spread, tail;
+  double C2_median, Delta_q0, Delta_q1, tail;
 
   /* Median */
   status = mexp_map_coefs(eps_dag_1, eps_dag_dag_1, eps_dag_2_median,
@@ -423,16 +546,16 @@ mexp_single_objective(double k_dag_1,
 			GSL_EFAILED);
   Delta_q1 = (Lambda_2 - Lambda_1)*L_0;
 
-  /* C2 Quantile q2 */
-  /* status = mexp_map_coefs(eps_dag_1, eps_dag_dag_1, eps_dag_2_q2, */
-  /* 			  &Iota_1, &Kappa_1, &Lambda_1, &Lambda_2, */
-  /* 			  p, w); */
-  /* if (status) GSL_ERROR("Failed computing 0->2 period map coefficients", */
-  /* 			GSL_EFAILED); */
-  /* C2_q2 = Lambda_2*L_0; */
-  status = tailrisk(eps_dag_1, eps_dag_dag_1, k_dag_2, c_0, L_0,
-		    &tail,
-		    p, w);
+  /* P of being under cbar */
+  /* status = tailrisk(eps_dag_1, eps_dag_dag_1, k_dag_2, c_0, L_0, */
+  /* 		    &tail, */
+  /* 		    p, w); */
+  /* if (status) GSL_ERROR("Failed computing tailrisk", GSL_EFAILED); */
+
+  double dummy;
+
+  status = mexp_cr2_pdf_cdf(eps_dag_1, eps_dag_dag_1, k_dag_2,
+			    1, c_0, L_0, p->c_bar, &dummy, &tail, p, w);
   if (status) GSL_ERROR("Failed computing tailrisk", GSL_EFAILED);
 
   /* Set output and we're done */
@@ -445,6 +568,135 @@ mexp_single_objective(double k_dag_1,
 
   return GSL_SUCCESS;
 }
+
+int
+mexp_cr2_pdf_cdf(double eps_dag_1, double eps_dag_dag_1, double k_dag_2,
+		 int C_or_c, double c_0, double L_0,
+		 double x, double *fx, double *Fx,
+		 mexp_pars_t *p, mexp_work_t *w)
+{
+  int status;
+
+
+  double eps_dag_2_root;
+
+  status = mexp_find_eps_dag_2_given_c(eps_dag_1, eps_dag_dag_1,
+  				       C_or_c, c_0, L_0, x, &eps_dag_2_root, 
+				       p, w);
+  if (status) GSL_ERROR("Could not find eps_dag_2 corresponding to given "
+  			"period 2 capitalisation",
+  			GSL_EFAILED);
+
+  double Iota_1, Kappa_1, Lambda_1;
+
+  status = mexp_map_coefs_1(eps_dag_1, eps_dag_dag_1, eps_dag_2_root,
+			    &Iota_1, &Kappa_1, &Lambda_1,
+			    p, w);
+  if (status) GSL_ERROR("Failed computing 0->2 period map coefficients",
+			GSL_EFAILED);
+
+  double Lambda_2, Lambda_2_prime;
+
+  status = mexp_Lambda2(eps_dag_1, eps_dag_dag_1, eps_dag_2_root,
+			&Lambda_2, &Lambda_2_prime, p, w);
+  if (status) GSL_ERROR("Failed computing Lambda 2 and its derivative",
+			GSL_EFAILED);
+
+  double x_prime;
+  
+  // c2 = (p->c_0 + Iota_1 - 1.0)/Lambda_2 + 1;
+  // C2 = c_0*L_0 + (Io1 - 1 + Lam2)*L0
+  if (C_or_c == 0)
+    {
+      x_prime = L_0*Lambda_2_prime;
+    }
+  else
+    {
+      x_prime = -(c_0 + Iota_1 - 1.0)*Lambda_2_prime/(Lambda_2*Lambda_2);
+    }
+
+  double dx_dZ2;
+  double deps_2_dag_dZ2 = -p->rho*p->zeta/sqrt(1.0-p->rho*p->rho);
+  
+  dx_dZ2 = x_prime * deps_2_dag_dZ2;
+
+  double Z2_root;
+
+  Z2_root = eps_dag_2_to_Z2(k_dag_2, eps_dag_2_root, p);
+
+  double fZ = gpdf(Z2_root);
+  
+  *fx = fZ/fabs(dx_dZ2);
+  *Fx = gcdf(Z2_root);
+
+  return GSL_SUCCESS;
+}
+
+int
+mexp_cap2_pdf_cdf(double k_dag_dag_1_A,
+		  double k_dag_dag_1_B,
+		  int bank,
+		  int C_or_c,
+		  double x, double *fx, double *Fx,
+		  mexp_pars_t *p, mexp_work_t *w)
+{
+  double eps_dag_1, eps_dag_dag_1;
+  double k_dag_dag_1_X;
+  double k_dag_1;
+  double k_dag_2;
+  double c0, L0;
+  
+  mexp_k_dags_impacted(k_dag_dag_1_A,
+		       k_dag_dag_1_B,
+		       &k_dag_1, &k_dag_2,
+		       p);
+
+  eps_dag_1 = eps_star(k_dag_1, p->X1, p->rho);
+
+  if (bank == 0)
+    {
+      k_dag_dag_1_X = k_dag_dag_1_A;
+      c0 = p->c0_A;
+      L0 = p->L0_A;
+    }
+  else
+    {
+      k_dag_dag_1_X = k_dag_dag_1_B;
+      c0 = p->c0_B;
+      L0 = p->L0_B;
+    }
+
+  eps_dag_dag_1 = eps_star(k_dag_dag_1_X, p->X1, p->rho);
+
+  return mexp_cr2_pdf_cdf(eps_dag_1, eps_dag_dag_1, k_dag_2,
+			  C_or_c, c0, L0,
+			  x, fx, Fx,
+			  p, w);
+}
+
+/* int */
+/* mexp_cr2_A_pdf_cdf(double k_dag_dag_1_A, */
+/* 		  double k_dag_dag_1_B, */
+/* 		  double c2, double *fc2, double *Fc2, */
+/* 		  mexp_pars_t *p, mexp_work_t *w) */
+/* { */
+/*   return mexp_cr2_X_pdf_cdf(k_dag_dag_1_A, */
+/* 			    k_dag_dag_1_B, */
+/* 			    0, c2, fc2, Fc2, */
+/* 			    p, w); */
+/* } */
+
+/* int */
+/* mexp_cr2_B_pdf_cdf(double k_dag_dag_1_A, */
+/* 		  double k_dag_dag_1_B, */
+/* 		  double c2, double *fc2, double *Fc2, */
+/* 		  mexp_pars_t *p, mexp_work_t *w) */
+/* { */
+/*   return mexp_cr2_X_pdf_cdf(k_dag_dag_1_A, */
+/* 			    k_dag_dag_1_B, */
+/* 			    1, c2, fc2, Fc2, */
+/* 			    p, w); */
+/* } */
 
 static double
 impact(double k_dag_dag_1_A, double k_dag_dag_1_B,
@@ -538,7 +790,9 @@ mexp_find_k_fcl_ubound(double *k_fcl_ubound,
 
   status = findroot(w, k_fcl_ubound_fun, p, k_max_min, k_max_max,
 		    k_fcl_ubound);
-  if (status) GSL_ERROR("Unable to find k impairment maximum -- this is most likely because we have multiple solutions (psi/sqrt(1-rho^2) <= 2pi appears to be a sufficient condition for unique solution)!",
+  if (status) GSL_ERROR("Unable to find k impairment maximum -- "
+			"this is most likely because we have multiple "
+			"solutions.",
 			GSL_EFAILED);
 
   return GSL_SUCCESS;
@@ -596,5 +850,7 @@ double
 mexp_k_of_p_tilde(double p_tilde, double k_bound,
 		  mexp_pars_t *p)
 {
-  return p->rho*p->X1 + sqrt(1.0-p->rho*p->rho)*gicdf(p_tilde*gcdf(eps_star(k_bound, p->X1, p->rho)));
+  return p->rho*p->X1 
+    + sqrt(1.0-p->rho*p->rho)
+      *gicdf(p_tilde*gcdf(eps_star(k_bound, p->X1, p->rho)));
 }

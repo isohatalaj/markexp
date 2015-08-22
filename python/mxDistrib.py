@@ -39,6 +39,7 @@ class MEModel(HasTraits):
     _q1 = 0.9
     _X1 = Range(-3.0, 3.0, -2.0)
     _c_bar = Range(-1.0, 0.1, 0.04)
+    _ptilde_B = Range(0.0, 1.0, 0.5)
     _mesh_d = Range(4, 64, 12, )
     
     
@@ -53,11 +54,10 @@ class MEModel(HasTraits):
 
     scenea = Instance(MlabSceneModel, ())
     sceneb = Instance(MlabSceneModel, ())
-    scenec = Instance(MlabSceneModel, ())
 
     surfa = Instance(PipelineBase)
     surfb = Instance(PipelineBase)
-    surfc = Instance(PipelineBase)
+
 
     def __init__(self):
         super(HasTraits, self).__init__()
@@ -86,18 +86,17 @@ class MEModel(HasTraits):
                               X1 = self._X1)
 
 
-    @on_trait_change('scenec.activated')
+    @on_trait_change('sceneb.activated')
     def populate_scenes(self):
         self.update_plot()
 
-    @on_trait_change('_phi, _varphi, _k0, _c0, _L0_A, _L0_B, _rho, _xi, _mu, _zeta, _psi, _chi, _gamma0, _gamma1, _gamma2, _X1, _c0, _c_bar, _mesh_d')
+    @on_trait_change('_phi, _varphi, _k0, _c0, _L0_A, _L0_B, _rho, _xi, _mu, _zeta, _psi, _chi, _gamma0, _gamma1, _gamma2, _X1, _c0, _c_bar, _mesh_d, _ptilde_B')
     def update_plot(self):
         
         print "-----------------------------------------------------------"
         # Disable rendering for the duration of the update
         self.scenea.disable_render = True
         self.sceneb.disable_render = True
-        self.scenec.disable_render = True
 
         # Read parameters from the UI
         self.me.pars.phi1 = self._phi
@@ -140,50 +139,44 @@ class MEModel(HasTraits):
         # ymax = k_max
         # xdata, ydata = np.mgrid[xmin:xmax:d, ymin:ymax:d]
 
-        xdata, ydata = np.mgrid[0.01:0.99:d, 0.01:0.99:d]
 
-        self.F = np.vectorize(lambda x, y, n: 
-                              self.me.objectives(self.me.k_of_p_tilde(x, k_max),
-                                                 self.me.k_of_p_tilde(y, k_max))[n])
 
-        self.G = np.vectorize(lambda x, y, n: 
-                              self.me.comp_P1(self.me.eps_star(x), self.me.eps_star(y))[n])
+        self.F = np.vectorize(lambda x, y, b, f, n: 
+                              self.me.cap2_pdf_cdf(b, f, x,
+                                                   self.me.k_of_p_tilde(y, k_max),
+                                                   self.me.k_of_p_tilde(self._ptilde_B, k_max))[n])
 
-        # self.F = np.vectorize(lambda k_fcl_A, k_fcl_B, n: 
-        #                       self.me.objectives(k_fcl_A, k_fcl_B)[n])
+        xdata, ydata = np.mgrid[0.0:(self.me.pars.L0_A*self.me.pars.c0_A):d, 0.01:0.99:d]
+        z0data = self.F(xdata, ydata, 0, 0, 0)
 
-        z0data = self.F(xdata, ydata, 2)
-        z1data = self.F(xdata, ydata, 3)
-        z2data = z1data + z0data
+        xdata, ydata = np.mgrid[0.0:0.15:d, 0.01:0.99:d]
+        z1data = self.F(xdata, ydata, 0, 1, 0)
+
+        xdata, ydata = np.mgrid[0.0:1.0:d, 0.0:1.0:d]
+
+        # x0 = xdata.min()
+        # x1 = xdata.max()
+        # xdata = (xdata - x0) / (x1 - x0)
+
+        # y0 = ydata.min()
+        # y1 = ydata.max()
+        # ydata = (ydata - y0) / (y1 - y0)
 
         z0 = z0data.min()
         z1 = z0data.max()
         z0data = (z0data - z0) / (z1 - z0)
 
-        print "Omega_A scale: [", z0, ", ", z1, "]"
-
         z0 = z1data.min()
         z1 = z1data.max()
-
-        print "Omega_B scale: [", z0, ", ", z1, "]"
         z1data = (z1data - z0) / (z1 - z0)
-
-
-        z0 = z2data.min()
-        z1 = z2data.max()
-        z2data = (z2data - z0) / (z1 - z0)
-
-        print "Omega_A+B scale: [", z0, ", ", z1, "]"
 
         if self.first:
             self.first = False
             self.surfa = self.scenea.mlab.surf(xdata, ydata, z0data, figure=self.scenea.mayavi_scene)#, warp_scale='auto')
             self.surfb = self.sceneb.mlab.surf(xdata, ydata, z1data, figure=self.sceneb.mayavi_scene)#, warp_scale='auto')
-            self.surfc = self.scenec.mlab.surf(xdata, ydata, z2data, figure=self.scenec.mayavi_scene)#, warp_scale='auto')
 
-            my.axes(self.surfa, nb_labels=5, xlabel="%-A forecl.", ylabel="%-B forecl.", zlabel="Omega A", figure=self.scenea.mayavi_scene)
-            my.axes(self.surfb, nb_labels=5, xlabel="%-A forecl.", ylabel="%-B forecl.", zlabel="Omega B", figure=self.sceneb.mayavi_scene)
-            my.axes(self.surfc, nb_labels=5, xlabel="%-A forecl.", ylabel="%-B forecl.", zlabel="Omega A+B", figure=self.scenec.mayavi_scene)
+            my.axes(self.surfa, nb_labels=5, xlabel="C-ratio c2", ylabel="%-A forecl.", zlabel="Ratio pdf.", figure=self.scenea.mayavi_scene)
+            my.axes(self.surfb, nb_labels=5, xlabel="C2", ylabel="%-A forecl.", zlabel="Cap. pdf.", figure=self.sceneb.mayavi_scene)
 
             # my.clf(figure=self.scenea.mayavi_scene)
             # my.text(0.1, 0.1, "Omega A", figure=self.scenea.mayavi_scene)
@@ -195,17 +188,16 @@ class MEModel(HasTraits):
             # my.axes(self.surfc, nb_labels=5, xlabel="k_fcl_A", ylabel="k_fcl_B", zlabel="Omega_A+B", figure=self.scenec.mayavi_scene)
 
             my.sync_camera(self.scenea.mayavi_scene, self.sceneb.mayavi_scene)
-            my.sync_camera(self.scenea.mayavi_scene, self.scenec.mayavi_scene)
+            # my.sync_camera(self.scenea.mayavi_scene, self.scenec.mayavi_scene)
 
         else:
             self.surfa.mlab_source.set(x=xdata, y=ydata, scalars=z0data)
             self.surfb.mlab_source.set(x=xdata, y=ydata, scalars=z1data)
-            self.surfc.mlab_source.set(x=xdata, y=ydata, scalars=z2data)
 
         # Resume rendering
         self.scenea.disable_render = False
         self.sceneb.disable_render = False
-        self.scenec.disable_render = False
+
 
         print "."
 
@@ -216,16 +208,13 @@ class MEModel(HasTraits):
     view = View(VSplit(HSplit(Item('scenea', editor=SceneEditor(scene_class=MayaviScene),
                                    height=250, width=300, show_label=False),
                               Item('sceneb', editor=SceneEditor(scene_class=MayaviScene),
-                                   height=250, width=300, show_label=False),
-                              Item('scenec', editor=SceneEditor(scene_class=MayaviScene),
-                                   height=250, width=300, show_label=False),
-                              ),
+                                   height=250, width=300, show_label=False)),
                        #->
                        HSplit(Group('_phi', '_varphi', '_k0',
                                     '_L0_A', '_L0_B', '_rho', '_xi',
                                     '_mu', '_zeta'),
                               Group('_chi',
-                                    '_c0', '_c_bar', '_X1', '_mesh_d'),
+                                    '_c0', '_c_bar', '_X1', '_ptilde_B', '_mesh_d'),
                               Group('_psi', '_gamma0',
                                     '_gamma1', '_gamma2'))
                        # <-
