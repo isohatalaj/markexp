@@ -20,17 +20,17 @@ import pymexp
 # INITIALIZATION
 
 class MEModel(HasTraits):
-    _phi = Range(0.01, 1.0, 0.5)
+    _phi = Range(0.01, 1.0, 0.2)
     _varphi = Range(0.01, 2.0, 1.0)
     _k0 = Range(-4.0, 0.0, -1.5)
-    _c0 = Range(0.0, 0.25, 0.12)
-    _L0_A = Range(0.0, 100.0, 1.0)
-    _L0_B = Range(0.0, 100.0, 1.0)
-    _rho = Range(0.01, 0.99, 0.3)
-    _xi = Range(0.01, 0.99, 0.5)
-    _mu = Range(0.0, 1.0, 0.45)
-    _zeta = Range(0.0, 10.0, 1.0)
-    _psi = Range(0.0, 10.0, 5.0)
+    _c0 = Range(0.0, 0.25, 0.075)
+    _L0_A = Range(0.0, 100.0, 50.0)
+    _L0_B = Range(0.0, 100.0, 50.0)
+    _rho = Range(0.01, 0.99, 0.4)
+    _xi = Range(0.01, 0.99, 0.6)
+    _mu = Range(0.0, 1.0, 0.5)
+    _zeta = Range(0.0, 10.0, 0.866)
+    _psi = Range(0.0, 10.0, 0.7)
     _chi = Range(0.0, 1.0, 0.0)
     _gamma0 = Range(0.0, 1.0, 1.0)
     _gamma1 = Range(0.0, 1.0, 0.5)
@@ -146,7 +146,7 @@ class MEModel(HasTraits):
                                                    self.me.k_of_p_tilde(y, k_max),
                                                    self.me.k_of_p_tilde(self._ptilde_B, k_max))[n])
 
-        xdata, ydata = np.mgrid[0.0:(self.me.pars.L0_A*self.me.pars.c0_A):d, 0.01:0.99:d]
+        xdata, ydata = np.mgrid[0.02:(self.me.pars.L0_A*self.me.pars.c0_A):d, 0.01:0.99:d]
         z0data = self.F(xdata, ydata, 0, 0, 0)
 
         xdata, ydata = np.mgrid[0.0:0.15:d, 0.01:0.99:d]
@@ -175,8 +175,8 @@ class MEModel(HasTraits):
             self.surfa = self.scenea.mlab.surf(xdata, ydata, z0data, figure=self.scenea.mayavi_scene)#, warp_scale='auto')
             self.surfb = self.sceneb.mlab.surf(xdata, ydata, z1data, figure=self.sceneb.mayavi_scene)#, warp_scale='auto')
 
-            my.axes(self.surfa, nb_labels=5, xlabel="C-ratio c2", ylabel="%-A forecl.", zlabel="Ratio pdf.", figure=self.scenea.mayavi_scene)
-            my.axes(self.surfb, nb_labels=5, xlabel="C2", ylabel="%-A forecl.", zlabel="Cap. pdf.", figure=self.sceneb.mayavi_scene)
+            my.axes(self.surfa, nb_labels=5, xlabel="Level C2", ylabel="%-A forecl.", zlabel="Cap pdf.", figure=self.scenea.mayavi_scene)
+            my.axes(self.surfb, nb_labels=5, xlabel="Ratio c2", ylabel="%-A forecl.", zlabel="Ratio pdf.", figure=self.sceneb.mayavi_scene)
 
             # my.clf(figure=self.scenea.mayavi_scene)
             # my.text(0.1, 0.1, "Omega A", figure=self.scenea.mayavi_scene)

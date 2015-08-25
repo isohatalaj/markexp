@@ -10,13 +10,14 @@ me = pymexp.Mexp()
 me.set_baseline()
 
 # ************************************************************************
+# Generate data
 k_max = me.pars.k0_1
 d = 32j
 
 xdata, ydata = np.mgrid[0.01:0.99:d, 0.01:0.99:d]
+
 Omega = np.vectorize(lambda x, y, n: 
-                     me.objectives(me.k_of_p_tilde(x, k_max),
-                                   me.k_of_p_tilde(y, k_max))[n])
+                     me.objectives_p(x, y)[n])
 
 me.pars.gamma0 = 1.0
 me.pars.gamma1 = 0.0
@@ -32,6 +33,9 @@ me.pars.gamma0 = 0.0
 me.pars.gamma1 = 0.0
 me.pars.gamma2 = 1.0
 OmegaCdata = Omega(xdata, ydata, 2)
+
+# ************************************************************************
+# Setup plot parameters
 
 # 3D view angles, rotation around z axis (azimuth) and elevation above
 # xy-plane:
@@ -49,6 +53,9 @@ kwargs = {"xlabel": r'$p_A$',
           "elev": elev, "azim": azim, "trim": trim,
           "zform": "5.2f", "zlabelshift": 7, 
           "labeldist": 3}
+
+# ************************************************************************
+# Do plots
 
 p3d.plot3d(xdata, ydata, OmegaAdata,
            zlabel=r'$\Omega_A$',
