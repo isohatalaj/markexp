@@ -564,14 +564,8 @@ mexp_single_objective(double k_dag_1,
 			GSL_EFAILED);
   Delta_q1 = (Lambda_2 - Lambda_1)*L_0;
 
-  /* P of being under cbar */
-  /* status = tailrisk(eps_dag_1, eps_dag_dag_1, k_dag_2, c_0, L_0, */
-  /* 		    &tail, */
-  /* 		    p, w); */
-  /* if (status) GSL_ERROR("Failed computing tailrisk", GSL_EFAILED); */
-
+  /* P of c2 being under cbar */
   double dummy;
-
   status = mexp_cr2_pdf_cdf(eps_dag_1, eps_dag_dag_1, k_dag_2,
 			    1, c_0, L_0, p->c_bar, &dummy, &tail, p, w);
   if (status) GSL_ERROR("Failed computing tailrisk", GSL_EFAILED);
@@ -691,30 +685,6 @@ mexp_cap2_pdf_cdf(double k_dag_dag_1_A,
 			  x, fx, Fx,
 			  p, w);
 }
-
-/* int */
-/* mexp_cr2_A_pdf_cdf(double k_dag_dag_1_A, */
-/* 		  double k_dag_dag_1_B, */
-/* 		  double c2, double *fc2, double *Fc2, */
-/* 		  mexp_pars_t *p, mexp_work_t *w) */
-/* { */
-/*   return mexp_cr2_X_pdf_cdf(k_dag_dag_1_A, */
-/* 			    k_dag_dag_1_B, */
-/* 			    0, c2, fc2, Fc2, */
-/* 			    p, w); */
-/* } */
-
-/* int */
-/* mexp_cr2_B_pdf_cdf(double k_dag_dag_1_A, */
-/* 		  double k_dag_dag_1_B, */
-/* 		  double c2, double *fc2, double *Fc2, */
-/* 		  mexp_pars_t *p, mexp_work_t *w) */
-/* { */
-/*   return mexp_cr2_X_pdf_cdf(k_dag_dag_1_A, */
-/* 			    k_dag_dag_1_B, */
-/* 			    1, c2, fc2, Fc2, */
-/* 			    p, w); */
-/* } */
 
 static double
 impact(double k_dag_dag_1_A, double k_dag_dag_1_B,

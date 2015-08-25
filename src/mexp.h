@@ -67,7 +67,6 @@ typedef struct {
 
 // C = C(Z)
 // P(C in [C',C'+dC])/dC = P(Z st. C(Z) in [C',C'+dC])/dC = f(Z(C)) / |dC/dZ|
-//
 // dC = dZ dC/dZ 
 
 typedef struct {
