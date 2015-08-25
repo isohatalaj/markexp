@@ -20,21 +20,21 @@ import pymexp
 # INITIALIZATION
 
 class MEModel(HasTraits):
-    _phi = Range(0.01, 1.0, 0.5)
+    _phi = Range(0.01, 1.0, 0.2)
     _varphi = Range(0.01, 2.0, 1.0)
     _k0 = Range(-4.0, 0.0, -1.5)
-    _c0 = Range(0.0, 0.25, 0.12)
-    _L0_A = Range(0.0, 100.0, 1.0)
-    _L0_B = Range(0.0, 100.0, 1.0)
-    _rho = Range(0.01, 0.99, 0.3)
-    _xi = Range(0.01, 0.99, 0.5)
-    _mu = Range(0.0, 1.0, 0.45)
-    _zeta = Range(0.0, 10.0, 1.0)
-    _psi = Range(0.0, 10.0, 5.0)
+    _c0 = Range(0.0, 0.25, 0.07)
+    _L0_A = Range(0.0, 100.0, 50.0)
+    _L0_B = Range(0.0, 100.0, 50.0)
+    _rho = Range(0.01, 0.99, 0.4)
+    _xi = Range(0.01, 0.99, 0.6)
+    _mu = Range(0.0, 1.0, 0.5)
+    _zeta = Range(0.0, 10.0, 0.866)
+    _psi = Range(0.0, 10.0, 0.7)
     _chi = Range(0.0, 1.0, 0.0)
-    _gamma0 = Range(0.0, 1.0, 1.0)
-    _gamma1 = Range(0.0, 1.0, 0.5)
-    _gamma2 = Range(0.0, 1.0, 0.0)
+    _gamma0 = Range(0.0, 1.0, 0.25)
+    _gamma1 = Range(0.0, 1.0, 0.0)
+    _gamma2 = Range(0.0, 1.0, 1.0)
     _q0 = 0.1
     _q1 = 0.9
     _X1 = Range(-3.0, 3.0, -2.0)
@@ -81,6 +81,7 @@ class MEModel(HasTraits):
                               gamma0 = self._gamma0,
                               gamma1 = self._gamma1,
                               gamma2 = self._gamma2,
+                              c_bar = self._c_bar,
                               q0 = self._q0,
                               q1 = self._q1,
                               X1 = self._X1)
@@ -123,7 +124,7 @@ class MEModel(HasTraits):
         self.me.pars.c_bar = self._c_bar;
         self.me.pars.X1 = self._X1
 
-        k_fcl_ubound = self.me.find_k_fcl_ubound()
+        k_fcl_ubound = self.me.find_k_fcl_global_ubound()
         print "k_fcl_ubound = ", k_fcl_ubound,
         print " => max fcl-% = ", self.me.N_star(k_fcl_ubound), 
         print "(baseline ", self.me.N_star(self.me.pars.k0_1), ")"
@@ -142,9 +143,15 @@ class MEModel(HasTraits):
 
         xdata, ydata = np.mgrid[0.01:0.99:d, 0.01:0.99:d]
 
+        # self.F = np.vectorize(lambda x, y, n: 
+        #                       self.me.k_fcls_from_ps(x, y)[n])
+
         self.F = np.vectorize(lambda x, y, n: 
-                              self.me.objectives(self.me.k_of_p_tilde(x, k_max),
-                                                 self.me.k_of_p_tilde(y, k_max))[n])
+                              self.me.objectives_p(x, y)[n])
+
+        # self.F = np.vectorize(lambda x, y, n: 
+        #                       self.me.objectives(self.me.k_of_p_tilde(x, k_max),
+        #                                          self.me.k_of_p_tilde(y, k_max))[n])
 
         # self.G = np.vectorize(lambda x, y, n:
         #                           self.me.c2_A_pdf_cdf(x))
@@ -158,6 +165,10 @@ class MEModel(HasTraits):
 
         z0data = self.F(xdata, ydata, 2)
         z1data = self.F(xdata, ydata, 3)
+
+        # z0data = self.F(xdata, ydata, 0) # poo
+        # z1data = self.F(xdata, ydata, 1) # poo
+
         z2data = z1data + z0data
 
         z0 = z0data.min()
