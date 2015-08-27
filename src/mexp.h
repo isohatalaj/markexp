@@ -249,6 +249,16 @@ mexp_k_fcls_from_ps(double p_A, double p_B,
 		    mexp_pars_t *p, mexp_work_t *w);
 
 
+int
+mexp_compute_Omega_data(int n,
+			double *p_A, double *p_B,
+			double *k_fcl_A_ubound,
+			double *k_fcl_B_ubound,
+			double *k_fcl_A, double *k_fcl_B,
+			double *Omega_A, double *Omega_B,
+			mexp_pars_t *p, mexp_work_t *w);
+
+
 /* Map given period 1 value k threshold to corresponding ideosync
  * threshold using the period 1 shock given in parameters. */
 double

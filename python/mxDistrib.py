@@ -122,77 +122,61 @@ class MEModel(HasTraits):
         self.me.pars.c_bar = self._c_bar;
         self.me.pars.X1 = self._X1
 
-        k_fcl_ubound = self.me.find_k_fcl_ubound()
+        k_fcl_ubound = self.me.find_k_fcl_global_ubound()
         print "k_fcl_ubound = ", k_fcl_ubound,
         print " => max fcl-% = ", self.me.N_star(k_fcl_ubound), 
         print "(baseline ", self.me.N_star(self.me.pars.k0_1), ")"
 
-
-        ## k_max = k_fcl_ubound
-        k_max = self.me.pars.k0_1
-
         d = self._mesh_d*1j
         
-        # xmin = k_max - 3.0
-        # xmax = k_max
-        # ymin = k_max - 3.0
-        # ymax = k_max
-        # xdata, ydata = np.mgrid[xmin:xmax:d, ymin:ymax:d]
-
-
-
         self.F = np.vectorize(lambda x, y, b, f, n: 
-                              self.me.cap2_pdf_cdf(b, f, x,
-                                                   self.me.k_of_p_tilde(y, k_max),
-                                                   self.me.k_of_p_tilde(self._ptilde_B, k_max))[n])
+                              self.me.cap2_pdf_cdf_p(b, f, x, y, self._ptilde_B)[n])
 
-        xdata, ydata = np.mgrid[0.02:(self.me.pars.L0_A*self.me.pars.c0_A):d, 0.01:0.99:d]
-        z0data = self.F(xdata, ydata, 0, 0, 0)
+        c2min = self.me.pars.c_bar - 0.01
+        c2max = self.me.pars.c0_A
 
-        xdata, ydata = np.mgrid[0.0:0.15:d, 0.01:0.99:d]
-        z1data = self.F(xdata, ydata, 0, 1, 0)
+        C2min = c2min*self.me.pars.L0_A
+        C2max = c2max*self.me.pars.L0_A
+
+        x0data, y0data = np.mgrid[C2min:C2max:d, 0.01:0.99:d]
+        z0data = self.F(x0data, y0data, 0, 0, 0)
+
+        x1data, y1data = np.mgrid[c2min:c2max:d, 0.01:0.99:d]
+        z1data = self.F(x1data, y1data, 0, 1, 0)
 
         xdata, ydata = np.mgrid[0.0:1.0:d, 0.0:1.0:d]
 
-        # x0 = xdata.min()
-        # x1 = xdata.max()
-        # xdata = (xdata - x0) / (x1 - x0)
+        z0min = z0data.min()
+        z0max = z0data.max()
+        z0data = (z0data - z0min) / (z0max - z0min)
 
-        # y0 = ydata.min()
-        # y1 = ydata.max()
-        # ydata = (ydata - y0) / (y1 - y0)
-
-        z0 = z0data.min()
-        z1 = z0data.max()
-        z0data = (z0data - z0) / (z1 - z0)
-
-        z0 = z1data.min()
-        z1 = z1data.max()
-        z1data = (z1data - z0) / (z1 - z0)
+        z1min = z1data.min()
+        z1max = z1data.max()
+        z1data = (z1data - z1min) / (z1max - z1min)
 
         if self.first:
             self.first = False
-            self.surfa = self.scenea.mlab.surf(xdata, ydata, z0data, figure=self.scenea.mayavi_scene)#, warp_scale='auto')
-            self.surfb = self.sceneb.mlab.surf(xdata, ydata, z1data, figure=self.sceneb.mayavi_scene)#, warp_scale='auto')
+            self.surfa = self.scenea.mlab.surf(xdata, ydata, z0data, figure=self.scenea.mayavi_scene)
+            self.surfb = self.sceneb.mlab.surf(xdata, ydata, z1data, figure=self.sceneb.mayavi_scene)
 
-            my.axes(self.surfa, nb_labels=5, xlabel="Level C2", ylabel="%-A forecl.", zlabel="Cap pdf.", figure=self.scenea.mayavi_scene)
-            my.axes(self.surfb, nb_labels=5, xlabel="Ratio c2", ylabel="%-A forecl.", zlabel="Ratio pdf.", figure=self.sceneb.mayavi_scene)
-
-            # my.clf(figure=self.scenea.mayavi_scene)
-            # my.text(0.1, 0.1, "Omega A", figure=self.scenea.mayavi_scene)
-            # my.text(0.1, 0.1, "Omega B", figure=self.sceneb.mayavi_scene)
-            # my.text(0.1, 0.1, "Omega A+B", figure=self.scenec.mayavi_scene)
-
-            # my.axes(self.surfa, nb_labels=5, xlabel="k_fcl_A", ylabel="k_fcl_B", zlabel="Omega_A", figure=self.scenea.mayavi_scene)
-            # my.axes(self.surfb, nb_labels=5, xlabel="k_fcl_A", ylabel="k_fcl_B", zlabel="Omega_B", figure=self.sceneb.mayavi_scene)
-            # my.axes(self.surfc, nb_labels=5, xlabel="k_fcl_A", ylabel="k_fcl_B", zlabel="Omega_A+B", figure=self.scenec.mayavi_scene)
+            self.axa = my.axes(self.surfa, nb_labels=5, 
+                               xlabel="Level C2", ylabel="%-A forecl.", zlabel="Cap pdf.", 
+                               ranges=[C2min, C2max, 0, 1, 0, 1], 
+                               figure=self.scenea.mayavi_scene)
+            self.axb = my.axes(self.surfb, nb_labels=5, 
+                               xlabel="Ratio c2", ylabel="%-A forecl.", zlabel="Ratio pdf.", 
+                               ranges=[c2min, c2max, 0, 1, 0, 1], 
+                               figure=self.sceneb.mayavi_scene)
 
             my.sync_camera(self.scenea.mayavi_scene, self.sceneb.mayavi_scene)
-            # my.sync_camera(self.scenea.mayavi_scene, self.scenec.mayavi_scene)
+            my.sync_camera(self.sceneb.mayavi_scene, self.scenea.mayavi_scene)
 
         else:
             self.surfa.mlab_source.set(x=xdata, y=ydata, scalars=z0data)
             self.surfb.mlab_source.set(x=xdata, y=ydata, scalars=z1data)
+
+            self.axa.axes.ranges = [C2min, C2max, 0, 1, 0, 1]
+            self.axb.axes.ranges = [c2min, c2max, 0, 1, 0, 1]
 
         # Resume rendering
         self.scenea.disable_render = False
@@ -210,13 +194,16 @@ class MEModel(HasTraits):
                               Item('sceneb', editor=SceneEditor(scene_class=MayaviScene),
                                    height=250, width=300, show_label=False)),
                        #->
-                       HSplit(Group('_phi', '_varphi', '_k0',
-                                    '_L0_A', '_L0_B', '_rho', '_xi',
-                                    '_mu', '_zeta'),
-                              Group('_chi',
-                                    '_c0', '_c_bar', '_X1', '_ptilde_B', '_mesh_d'),
-                              Group('_psi', '_gamma0',
-                                    '_gamma1', '_gamma2'))
+                       HSplit(Group('_phi', '_varphi', '_rho', '_xi', '_mu', '_zeta'),
+                              Group('_X1', '_c_bar', '_c0', '_k0', '_L0_A', '_L0_B', '_mesh_d'),
+                              Group('_psi', '_gamma0', '_gamma1', '_gamma2'))
+                       # HSplit(Group('_phi', '_varphi', '_k0',
+                       #              '_L0_A', '_L0_B', '_rho', '_xi',
+                       #              '_mu', '_zeta'),
+                       #        Group('_chi',
+                       #              '_c0', '_c_bar', '_X1', '_ptilde_B', '_mesh_d'),
+                       #        Group('_psi', '_gamma0',
+                       #              '_gamma1', '_gamma2'))
                        # <-
                        # Group('_', '_phi', '_varphi', '_k0',
                        #       '_L0_A', '_L0_B', '_rho', '_xi',

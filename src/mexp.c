@@ -49,11 +49,11 @@ mexp_work_alloc()
   self->intwork = NULL;
   self->solver = NULL;
 
-  self->tol_rel = 1e-9;
-  self->tol_abs = 1e-9;
+  self->tol_rel = 1e-5;
+  self->tol_abs = 1e-5;
   self->max_iter = 64;
 
-  self->intwork_size = 512;
+  self->intwork_size = 128;
   self->intwork = gsl_integration_workspace_alloc(self->intwork_size);
   if (self->intwork == NULL) goto fail;
 
@@ -162,7 +162,7 @@ static double
 stdinteg_fun(double x, void *params)
 {
   double *v = params;
-  return exp(v[0]*x)*gcdf(v[1]*x+v[2])*gpdf(x);
+  return gcdf(v[0]*x+v[1])*gpdf(x);
 }
 
 int
@@ -172,25 +172,14 @@ mexp_work_stdinteg(int limtype, double alpha, double omega,
 		   mexp_work_t *work)
 {
   gsl_function f;
-  double v[3];
+  double v[2];
   double s = 1.0;
 
-  const int stdize = 1;
-  if (stdize)
-    {
-      v[0] = 0.0;
-      v[1] = b;
-      v[2] = b*a + c;
-      alpha -= a;
-      omega -= a;
-      s = exp(0.5*a*a);
-    }
-  else
-    {
-      v[0] = a;
-      v[1] = b;
-      v[2] = c;
-    }
+  v[0] = b;
+  v[1] = b*a + c;
+  alpha -= a;
+  omega -= a;
+  s = exp(0.5*a*a);
 
   f.function = stdinteg_fun;
   f.params = v;
@@ -276,6 +265,8 @@ exp_ff_integral(int limtype, double alpha, double omega,
       break;
 
     case MEXP_INF_INF:
+    default:
+
       Ialpha = 0.0;
       Iomega = 1.0;
     }
@@ -328,9 +319,20 @@ mexp_map_coefs_period_1(double eps_dag_1, double eps_dag_dag_1,
 			mexp_pars_t *p, mexp_work_t *w)
 {
   /* TODO: Optimisation opportunities here. */
-  *Iota1   = exp(p->phi1*(0.5*p->phi1-eps_dag_1))*gcdf(eps_dag_dag_1-p->phi1); //ok
-  *Kappa1  = -gcdf(eps_dag_1) + exp(p->phi1*(0.5*p->phi1-eps_dag_1))*gcdf(eps_dag_1-p->phi1); //ok
-  *Lambda1 = 1.0 - gcdf(eps_dag_1) - exp(p->phi1*(0.5*p->phi1-eps_dag_1))*(gcdf(eps_dag_dag_1 - p->phi1) - gcdf(eps_dag_1 - p->phi1)); //ok
+
+  /* These are correct: */
+  /* *Iota1   = exp(p->phi1*(0.5*p->phi1-eps_dag_1))*gcdf(eps_dag_dag_1-p->phi1); //ok */
+  /* *Kappa1  = -gcdf(eps_dag_1) + exp(p->phi1*(0.5*p->phi1-eps_dag_1))*gcdf(eps_dag_1-p->phi1); //ok */
+  /* *Lambda1 = 1.0 - gcdf(eps_dag_1) - exp(p->phi1*(0.5*p->phi1-eps_dag_1))*(gcdf(eps_dag_dag_1 - p->phi1) - gcdf(eps_dag_1 - p->phi1)); //ok */
+
+  double gcdf1 = gcdf(eps_dag_1);
+  double gcdf2 = gcdf(eps_dag_1 - p->phi1);
+  double gcdf3 = gcdf(eps_dag_dag_1 - p->phi1);
+  double exp1 = exp(p->phi1*(0.5*p->phi1-eps_dag_1));
+
+  *Kappa1 = -gcdf1 + exp1*gcdf2;
+  *Lambda1 = 1.0 - gcdf1 - exp1*(gcdf3 - gcdf2);
+  *Iota1 = *Kappa1 - *Lambda1 + 1;
 
   return GSL_SUCCESS;
 }
@@ -419,8 +421,13 @@ mexp_map_coefs_period_2(double eps_dag_1, double eps_dag_dag_1,
 			GSL_EFAILED);
 
   /* TODO: Optimisation opportunities here. */
-  double A0 = exp(0.5*p->phi2*p->phi2*(1-p->xi*p->xi)-p->phi2*(eps_dag_2+p->varphi*eps_dag_1));
+  /* These are correct */
+  /* double A0 = exp(0.5*p->phi2*p->phi2*(1-p->xi*p->xi)-p->phi2*(eps_dag_2+p->varphi*eps_dag_1)); */
+  /* double A2 = exp(0.5*p->phi2*p->phi2*(1-p->xi*p->xi)-p->phi2*eps_dag_2); */
+  /* double B0 = 1.0 - gcdf(eps_dag_dag_1); */
+
   double A2 = exp(0.5*p->phi2*p->phi2*(1-p->xi*p->xi)-p->phi2*eps_dag_2);
+  double A0 = A2*exp(-p->phi2*p->varphi*eps_dag_1);
   double B0 = 1.0 - gcdf(eps_dag_dag_1);
 
   *Lambda2 = B0 + A0*LI[0] - LI[1] + A2*LI[2] - LI[3];
@@ -447,13 +454,13 @@ mexp_map_coefs(double eps_dag_1, double eps_dag_dag_1,
   int status;
 
   status = mexp_map_coefs_period_1(eps_dag_1, eps_dag_dag_1, eps_dag_2,
-			    Iota1, Kappa1, Lambda1,
-			    p, w);
+				   Iota1, Kappa1, Lambda1,
+				   p, w);
   if (status) GSL_ERROR("Failed computing period 1 IKL coefficients",
 			GSL_EFAILED);
   
   status = mexp_map_coefs_period_2(eps_dag_1, eps_dag_dag_1, eps_dag_2,
-			Lambda2, Lambda2_prime, p, w);
+				   Lambda2, Lambda2_prime, p, w);
   if (status) GSL_ERROR("Failed computing Lambda2",
 			GSL_EFAILED);
 
@@ -516,8 +523,8 @@ mexp_find_eps_dag_2_given_c(double eps_dag_1, double eps_dag_dag_1,
   tp.x_target = x_target;
 
   /* TODO: Can we refine this bracket a bit? */
-  double eps_dag_2_min = -8.0;
-  double eps_dag_2_max = +8.0;
+  double eps_dag_2_min = -5.0;
+  double eps_dag_2_max = +5.0;
 
   double y0 = dag2finder_fun(eps_dag_2_min, &tp);
   double y1 = dag2finder_fun(eps_dag_2_max, &tp);
@@ -607,37 +614,47 @@ mexp_single_objective(double k_dag_1,
   double Iota_1, Kappa_1, Lambda_1, Lambda_2;
   double C2_median, Delta_q0, Delta_q1, tail;
 
-  /* Median */
-  status = mexp_map_coefs(eps_dag_1, eps_dag_dag_1, eps_dag_2_median,
-			  &Iota_1, &Kappa_1, &Lambda_1, &Lambda_2, NULL,
-			  p, w);
-  if (status) GSL_ERROR("Failed computing 0->2 period map coefficients",
-			GSL_EFAILED);
-  C2_median = (c_0 + Iota_1 - 1.0 + Lambda_2)*L_0;
-  
+  if (p->gamma0 != 0.0)
+    {
+      /* Median */
+      status = mexp_map_coefs(eps_dag_1, eps_dag_dag_1, eps_dag_2_median,
+			      &Iota_1, &Kappa_1, &Lambda_1, &Lambda_2, NULL,
+			      p, w);
+      if (status) GSL_ERROR("Failed computing 0->2 period map coefficients",
+			    GSL_EFAILED);
+      C2_median = (c_0 + Iota_1 - 1.0 + Lambda_2)*L_0;
+    }
 
-  /* Profit quantile q0 */
-  status = mexp_map_coefs(eps_dag_1, eps_dag_dag_1, eps_dag_2_q0,
-			  &Iota_1, &Kappa_1, &Lambda_1, &Lambda_2, NULL,
-			  p, w);
-  if (status) GSL_ERROR("Failed computing 0->2 period map coefficients",
-			GSL_EFAILED);
-  Delta_q0 = (Lambda_2 - Lambda_1)*L_0;
+  if (p->gamma1 != 0.0)
+    {
+      /* Profit quantile q0 */
+      status = mexp_map_coefs(eps_dag_1, eps_dag_dag_1, eps_dag_2_q0,
+			      &Iota_1, &Kappa_1, &Lambda_1, &Lambda_2, NULL,
+			      p, w);
+      if (status) GSL_ERROR("Failed computing 0->2 period map coefficients",
+			    GSL_EFAILED);
+      Delta_q0 = (Lambda_2 - Lambda_1)*L_0;
+      
+      /* Profit quantile q1 */
+      status = mexp_map_coefs(eps_dag_1, eps_dag_dag_1, eps_dag_2_q1,
+			      &Iota_1, &Kappa_1, &Lambda_1, &Lambda_2, NULL,
+			      p, w);
+      if (status) GSL_ERROR("Failed computing 0->2 period map coefficients",
+			    GSL_EFAILED);
 
-  /* Profit quantile q1 */
-  status = mexp_map_coefs(eps_dag_1, eps_dag_dag_1, eps_dag_2_q1,
-			  &Iota_1, &Kappa_1, &Lambda_1, &Lambda_2, NULL,
-			  p, w);
-  if (status) GSL_ERROR("Failed computing 0->2 period map coefficients",
-			GSL_EFAILED);
-  Delta_q1 = (Lambda_2 - Lambda_1)*L_0;
+      Delta_q1 = (Lambda_2 - Lambda_1)*L_0;
+    }
 
-  /* P of being under cbar */
-  double dummy;
-  status = mexp_raw_cap2_pdf_cdf(eps_dag_1, eps_dag_dag_1, k_dag_2,
-				 1, c_0, L_0, p->c_bar, &dummy, &tail, p, w);
+  if (p->gamma2 != 0.0)
+    {
+      /* P of being under cbar */
+      double dummy;
 
-  if (status) GSL_ERROR("Failed computing tailrisk", GSL_EFAILED);
+      status = mexp_raw_cap2_pdf_cdf(eps_dag_1, eps_dag_dag_1, k_dag_2,
+				     1, c_0, L_0, p->c_bar, &dummy, &tail, p, w);
+      
+      if (status) GSL_ERROR("Failed computing tailrisk", GSL_EFAILED);
+    }
 
   /* Set output and we're done */
 
@@ -652,9 +669,9 @@ mexp_single_objective(double k_dag_1,
 
 int
 mexp_raw_cap2_pdf_cdf(double eps_dag_1, double eps_dag_dag_1, double k_dag_2,
-		 int C_or_c, double c_0, double L_0,
-		 double x, double *fx, double *Fx,
-		 mexp_pars_t *p, mexp_work_t *w)
+		      int C_or_c, double c_0, double L_0,
+		      double x, double *fx, double *Fx,
+		      mexp_pars_t *p, mexp_work_t *w)
 {
   int status;
 
@@ -800,9 +817,9 @@ zfun(double x, void *pars)
   return x - p[0] - p[1]*gcdf(x);
 }
 
-/* Find the least root of x == a + b N(x), where a, b constants, here
- * assuming b > 0, and N is the normal distribution cumulative density
- * function.
+/* Find the least root of x == a + b N(c1 x + c2), where a, b
+ * constants, here assuming b > 0, c1 > 0, and N is the normal
+ * distribution cumulative density function.
  * 
  * It is easy to show that:
  * 1. If b < sqrt(2pi), then there is just one solution.
@@ -845,8 +862,6 @@ findz(double a, double b, double c1, double c2,
 	{
 	  /* There is a negative solution, and the one we have in the
 	   * brackets must then also be the least one. */
-	  
-	  status = findroot(work, zfun, p, x0, x1, z);
 	}
       else
 	{
@@ -854,19 +869,19 @@ findz(double a, double b, double c1, double c2,
 	   * and between x_star and a + b. */
 	  x0 = x_star;
 	  x1 = a + b;
-	  
-	  status = findroot(work, zfun, p, x0, x1, z);
 	}
     }
   else
     {
       /* For sure have single solution, and it must lie between
        * a and a + b. */
-
-      status = findroot(work, zfun, p, a, a + b, z);
+      x0 = a;
+      x1 = a + b;
     }
 
+  status = findroot(work, zfun, p, x0, x1, z);
   *z = (*z - c2)/c1;
+
   return status;
 }
 
@@ -970,5 +985,88 @@ mexp_k_fcls_from_ps(double p_A, double p_B,
 			GSL_EFAILED);
 
   return GSL_SUCCESS;					 
+}
+
+
+int
+mexp_compute_Omega_data(int n,
+			double *p_A, double *p_B,
+			double *k_fcl_A_ubound,
+			double *k_fcl_B_ubound,
+			double *k_fcl_A, double *k_fcl_B,
+			double *Omega_A, double *Omega_B,
+			mexp_pars_t *p, mexp_work_t *w)
+{
+  int status;
+  int i, j;
+  double p0 = 0.01, p1 = 1.0;
+  double dp = (p1 - p0)/(n - 1);
+
+  double k_fcl_global_ubound;
+
+  status = mexp_find_k_fcl_global_ubound(&k_fcl_global_ubound, p, w);
+  if (status) GSL_ERROR("Failed computing k global upper bound",
+			GSL_EFAILED);
+  
+  for (i = 0; i < n; ++i)
+    {
+      double p_X_i = p0 + dp * i;
+      
+      status = mexp_find_k_fcl_bank_ubound(0, p_X_i, 
+					   k_fcl_A_ubound + i,
+					   k_fcl_global_ubound,
+					   p, w);
+      if (status) GSL_ERROR("Failed computing bank A k bound",
+			    GSL_EFAILED);
+
+      status = mexp_find_k_fcl_bank_ubound(1, p_X_i, 
+					   k_fcl_B_ubound + i,
+					   k_fcl_global_ubound,
+					   p, w);
+      if (status) GSL_ERROR("Failed computing bank B k bound",
+			    GSL_EFAILED);
+    }
+
+  for (i = 0; i < n; ++i)
+    {
+      for (j = 0; j < n; ++j)
+	{
+	  int index = i*n + j;
+	  double p_A_ij = i*dp + p0;
+	  double p_B_ij = j*dp + p0;
+	  double k_fcl_A_ij;
+	  double k_fcl_B_ij;
+	  double Omega_A_ij;
+	  double Omega_B_ij;
+	  double k_dag_1, k_dag_2;
+
+	  p_A[index] = p_A_ij;
+	  p_B[index] = p_B_ij;
+
+	  status = mexp_k_fcls_from_ps_given_bounds(p_A_ij, p_B_ij,
+						    k_fcl_A_ubound[j],
+						    k_fcl_B_ubound[i],
+						    &k_fcl_A_ij,
+						    &k_fcl_B_ij,
+						    p, w);
+	  if (status) GSL_ERROR("Could not map ps to ks",
+				GSL_EFAILED);
+
+	  k_fcl_A[index] = k_fcl_A_ij;
+	  k_fcl_B[index] = k_fcl_B_ij;
+
+	  status = mexp_two_objectives(k_fcl_A_ij, k_fcl_B_ij,
+				       &k_dag_1, &k_dag_2,
+				       &Omega_A_ij, &Omega_B_ij,
+				       p, w);
+	  if (status) GSL_ERROR("Could not evaluate objective funcs",
+				GSL_EFAILED);
+
+	  Omega_A[index] = Omega_A_ij;
+	  Omega_B[index] = Omega_B_ij;	  	  
+	}
+    }
+
+  return GSL_SUCCESS;
 }
 

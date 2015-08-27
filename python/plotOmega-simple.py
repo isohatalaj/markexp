@@ -59,18 +59,18 @@ kwargs = {"xlabel": r'$p_A$',
 
 p3d.plot3d(xdata, ydata, OmegaAdata,
            zlabel=r'$\Omega_A$',
-           plotlabel=r'$(a)$',
+           plotlabel=r'(a)',
            export='Omega-simple-A.pdf',
            **kwargs)
 
 p3d.plot3d(xdata, ydata, OmegaBdata,
            zlabel=r'$\Omega_A$',
-           plotlabel=r'$(b)$',
+           plotlabel=r'(b)',
            export='Omega-simple-B.pdf',
            **kwargs)
 
 p3d.plot3d(xdata, ydata, OmegaCdata,
            zlabel=r'$\Omega_A$',
-           plotlabel=r'$(c)$',
+           plotlabel=r'(c)',
            export='Omega-simple-C.pdf',
            **kwargs)

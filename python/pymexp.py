@@ -2,6 +2,9 @@
 import ctypes
 import ctypes.util
 
+import numpy as np
+from numpy.ctypeslib import ndpointer
+
 mexppath = ctypes.util.find_library("mexp")
 if mexppath:
     # Found, load it:
@@ -70,10 +73,6 @@ _N_star = libmexp.mexp_N_star
 _N_star.argtypes = [ctypes.c_double, ctypes.c_void_p]
 _N_star.restype = ctypes.c_double
 
-_k_of_p_tilde = libmexp.mexp_k_of_p_tilde
-_k_of_p_tilde.argtypes = [ctypes.c_double, ctypes.c_double, ctypes.c_void_p]
-_k_of_p_tilde.restype = ctypes.c_double
-
 _cap2_pdf_cdf = libmexp.mexp_cap2_pdf_cdf
 _cap2_pdf_cdf.argtypes = [ctypes.c_double, ctypes.c_double, 
                           ctypes.c_int, ctypes.c_int,
@@ -82,6 +81,29 @@ _cap2_pdf_cdf.argtypes = [ctypes.c_double, ctypes.c_double,
                           ctypes.POINTER(ctypes.c_double),
                           ctypes.c_void_p, ctypes.c_void_p]
 _cap2_pdf_cdf.restype = ctypes.c_int
+
+_compute_Omega_data = libmexp.mexp_compute_Omega_data
+_compute_Omega_data.argtypes = [ctypes.c_int,
+                                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                ctypes.c_void_p, ctypes.c_void_p]
+_compute_Omega_data.restype = ctypes.c_int
+
+                                # ctypes.POINTER(ctypes.c_double),
+                                # ctypes.POINTER(ctypes.c_double),
+                                # ctypes.POINTER(ctypes.c_double),
+                                # ctypes.POINTER(ctypes.c_double),
+                                # ctypes.POINTER(ctypes.c_double),
+                                # ctypes.POINTER(ctypes.c_double),
+                                # ctypes.POINTER(ctypes.c_double),
+                                # ctypes.POINTER(ctypes.c_double),
+
 
 class NumericException(Exception):
     pass
@@ -278,4 +300,30 @@ class Mexp:
         k_fcl_A, k_fcl_B = self.k_fcls_from_ps(p_A, p_B)
         return self.cap2_pdf_cdf(bank, fun, x, k_fcl_A, k_fcl_B)
 
+    def compute_Omega_data(self, n):
+        pA = np.empty((n, n), dtype=np.double)
+        pB = np.empty((n, n), dtype=np.double)
+        kfclA = np.empty((n, n), dtype=np.double)
+        kfclB = np.empty((n, n), dtype=np.double)
+        OmegaA = np.empty((n, n), dtype=np.double)
+        OmegaB = np.empty((n, n), dtype=np.double)
+        kfclA_bound = np.empty(n, dtype=np.double)
+        kfclB_bound = np.empty(n, dtype=np.double)
+
+        status = _compute_Omega_data(ctypes.c_int(n),
+                                     pA,
+                                     pB,
+                                     kfclA_bound,
+                                     kfclB_bound,
+                                     kfclA,
+                                     kfclB,
+                                     OmegaA,
+                                     OmegaB,
+                                     ctypes.byref(self.pars),
+                                     self._work)
+
+        if status != 0:
+            raise NumericException()
+
+        return (pA, pB, kfclA, kfclB, OmegaA, OmegaB)
 

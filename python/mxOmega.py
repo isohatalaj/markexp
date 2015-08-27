@@ -30,8 +30,8 @@ class MEModel(HasTraits):
     _xi = Range(0.01, 0.99, 0.6)
     _mu = Range(0.0, 1.0, 0.5)
     _zeta = Range(0.0, 10.0, 0.866)
-    _psi = Range(0.0, 10.0, 0.7)
-    _chi = Range(0.0, 1.0, 0.0)
+    _psi = Range(0.0, 2.0, 0.7)
+    _chi = 0.0 # Range(0.0, 1.0, 0.0)
     _gamma0 = Range(0.0, 1.0, 0.25)
     _gamma1 = Range(0.0, 1.0, 0.0)
     _gamma2 = Range(0.0, 1.0, 1.0)
@@ -91,7 +91,7 @@ class MEModel(HasTraits):
     def populate_scenes(self):
         self.update_plot()
 
-    @on_trait_change('_phi, _varphi, _k0, _c0, _L0_A, _L0_B, _rho, _xi, _mu, _zeta, _psi, _chi, _gamma0, _gamma1, _gamma2, _X1, _c0, _c_bar, _mesh_d')
+    @on_trait_change('_phi, _varphi, _k0, _c0, _L0_A, _L0_B, _rho, _xi, _mu, _zeta, _psi, _gamma0, _gamma1, _gamma2, _X1, _c0, _c_bar, _mesh_d')
     def update_plot(self):
         
         print "-----------------------------------------------------------"
@@ -129,85 +129,41 @@ class MEModel(HasTraits):
         print " => max fcl-% = ", self.me.N_star(k_fcl_ubound), 
         print "(baseline ", self.me.N_star(self.me.pars.k0_1), ")"
 
-
-        ## k_max = k_fcl_ubound
         k_max = self.me.pars.k0_1
 
-        d = self._mesh_d*1j
-        
-        # xmin = k_max - 3.0
-        # xmax = k_max
-        # ymin = k_max - 3.0
-        # ymax = k_max
-        # xdata, ydata = np.mgrid[xmin:xmax:d, ymin:ymax:d]
-
-        xdata, ydata = np.mgrid[0.01:0.99:d, 0.01:0.99:d]
-
-        # self.F = np.vectorize(lambda x, y, n: 
-        #                       self.me.k_fcls_from_ps(x, y)[n])
-
-        self.F = np.vectorize(lambda x, y, n: 
-                              self.me.objectives_p(x, y)[n])
-
-        # self.F = np.vectorize(lambda x, y, n: 
-        #                       self.me.objectives(self.me.k_of_p_tilde(x, k_max),
-        #                                          self.me.k_of_p_tilde(y, k_max))[n])
-
-        # self.G = np.vectorize(lambda x, y, n:
-        #                           self.me.c2_A_pdf_cdf(x))
-
-
-        # self.G = np.vectorize(lambda x, y, n: 
-        #                       self.me.comp_P1(self.me.eps_star(x), self.me.eps_star(y))[n])
-
-        # self.F = np.vectorize(lambda k_fcl_A, k_fcl_B, n: 
-        #                       self.me.objectives(k_fcl_A, k_fcl_B)[n])
-
-        z0data = self.F(xdata, ydata, 2)
-        z1data = self.F(xdata, ydata, 3)
-
-        # z0data = self.F(xdata, ydata, 0) # poo
-        # z1data = self.F(xdata, ydata, 1) # poo
-
+        xdata, ydata, kAdata, kBdata, z0data, z1data = self.me.compute_Omega_data(self._mesh_d)
         z2data = z1data + z0data
 
-        z0 = z0data.min()
-        z1 = z0data.max()
-        z0data = (z0data - z0) / (z1 - z0)
+        z0min = z0data.min()
+        z0max = z0data.max()
+        z0data = (z0data - z0min) / (z0max - z0min)
 
-        print "Omega_A scale: [", z0, ", ", z1, "]"
+        z1min = z1data.min()
+        z1max = z1data.max()
+        z1data = (z1data - z1min) / (z1max - z1min)
 
-        z0 = z1data.min()
-        z1 = z1data.max()
-
-        print "Omega_B scale: [", z0, ", ", z1, "]"
-        z1data = (z1data - z0) / (z1 - z0)
-
-
-        z0 = z2data.min()
-        z1 = z2data.max()
-        z2data = (z2data - z0) / (z1 - z0)
-
-        print "Omega_A+B scale: [", z0, ", ", z1, "]"
+        z2min = z2data.min()
+        z2max = z2data.max()
+        z2data = (z2data - z2min) / (z2max - z2min)
 
         if self.first:
             self.first = False
-            self.surfa = self.scenea.mlab.surf(xdata, ydata, z0data, figure=self.scenea.mayavi_scene)#, warp_scale='auto')
-            self.surfb = self.sceneb.mlab.surf(xdata, ydata, z1data, figure=self.sceneb.mayavi_scene)#, warp_scale='auto')
-            self.surfc = self.scenec.mlab.surf(xdata, ydata, z2data, figure=self.scenec.mayavi_scene)#, warp_scale='auto')
+            self.surfa = self.scenea.mlab.surf(xdata, ydata, z0data, figure=self.scenea.mayavi_scene)
+            self.surfb = self.sceneb.mlab.surf(xdata, ydata, z1data, figure=self.sceneb.mayavi_scene)
+            self.surfc = self.scenec.mlab.surf(xdata, ydata, z2data, figure=self.scenec.mayavi_scene)
 
-            my.axes(self.surfa, nb_labels=5, xlabel="%-A forecl.", ylabel="%-B forecl.", zlabel="Omega A", figure=self.scenea.mayavi_scene)
-            my.axes(self.surfb, nb_labels=5, xlabel="%-A forecl.", ylabel="%-B forecl.", zlabel="Omega B", figure=self.sceneb.mayavi_scene)
-            my.axes(self.surfc, nb_labels=5, xlabel="%-A forecl.", ylabel="%-B forecl.", zlabel="Omega A+B", figure=self.scenec.mayavi_scene)
-
-            # my.clf(figure=self.scenea.mayavi_scene)
-            # my.text(0.1, 0.1, "Omega A", figure=self.scenea.mayavi_scene)
-            # my.text(0.1, 0.1, "Omega B", figure=self.sceneb.mayavi_scene)
-            # my.text(0.1, 0.1, "Omega A+B", figure=self.scenec.mayavi_scene)
-
-            # my.axes(self.surfa, nb_labels=5, xlabel="k_fcl_A", ylabel="k_fcl_B", zlabel="Omega_A", figure=self.scenea.mayavi_scene)
-            # my.axes(self.surfb, nb_labels=5, xlabel="k_fcl_A", ylabel="k_fcl_B", zlabel="Omega_B", figure=self.sceneb.mayavi_scene)
-            # my.axes(self.surfc, nb_labels=5, xlabel="k_fcl_A", ylabel="k_fcl_B", zlabel="Omega_A+B", figure=self.scenec.mayavi_scene)
+            self.axa = my.axes(self.surfa, nb_labels=5, 
+                               xlabel="%-A forecl.", ylabel="%-B forecl.", zlabel="Omega A", 
+                               ranges = [0, 1, 0, 1, z0min, z0max],
+                               figure=self.scenea.mayavi_scene)
+            self.axb = my.axes(self.surfb, nb_labels=5, 
+                               xlabel="%-A forecl.", ylabel="%-B forecl.", zlabel="Omega B", 
+                               ranges = [0, 1, 0, 1, z1min, z1max],
+                               figure=self.sceneb.mayavi_scene)
+            self.axc = my.axes(self.surfc, nb_labels=5, 
+                               xlabel="%-A forecl.", ylabel="%-B forecl.", zlabel="Omega A+B", 
+                               ranges = [0, 1, 0, 1, z2min, z2max],
+                               figure=self.scenec.mayavi_scene)
 
             my.sync_camera(self.scenea.mayavi_scene, self.sceneb.mayavi_scene)
             my.sync_camera(self.scenea.mayavi_scene, self.scenec.mayavi_scene)
@@ -216,6 +172,11 @@ class MEModel(HasTraits):
             self.surfa.mlab_source.set(x=xdata, y=ydata, scalars=z0data)
             self.surfb.mlab_source.set(x=xdata, y=ydata, scalars=z1data)
             self.surfc.mlab_source.set(x=xdata, y=ydata, scalars=z2data)
+
+            self.axa.axes.ranges = [0, 1, 0, 1, z0min, z0max]
+            self.axb.axes.ranges = [0, 1, 0, 1, z1min, z1max]
+            self.axc.axes.ranges = [0, 1, 0, 1, z2min, z2max]
+
 
         # Resume rendering
         self.scenea.disable_render = False
@@ -236,13 +197,9 @@ class MEModel(HasTraits):
                                    height=250, width=300, show_label=False),
                               ),
                        #->
-                       HSplit(Group('_phi', '_varphi', '_k0',
-                                    '_L0_A', '_L0_B', '_rho', '_xi',
-                                    '_mu', '_zeta'),
-                              Group('_chi',
-                                    '_c0', '_c_bar', '_X1', '_mesh_d'),
-                              Group('_psi', '_gamma0',
-                                    '_gamma1', '_gamma2'))
+                       HSplit(Group('_phi', '_varphi', '_rho', '_xi', '_mu', '_zeta'),
+                              Group('_X1', '_c_bar', '_c0', '_k0', '_L0_A', '_L0_B', '_mesh_d'),
+                              Group('_psi', '_gamma0', '_gamma1', '_gamma2'))
                        # <-
                        # Group('_', '_phi', '_varphi', '_k0',
                        #       '_L0_A', '_L0_B', '_rho', '_xi',
